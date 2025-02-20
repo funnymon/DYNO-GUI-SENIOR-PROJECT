@@ -21,6 +21,7 @@ class SerialHandler:
 
         self.data = {
             "time": [],
+            "laptop_time": [],
             "ir_temp": [[] for _ in range(8)],
             "tc_temp": [[], []],
             "load": [],
@@ -48,6 +49,8 @@ class SerialHandler:
                     values = line.split(",")
 
                     if len(values) == 14:
+                        # Get current laptop time
+                        current_time = datetime.now().strftime('%H:%M:%S:%f')[:-3]
                         time_measured = float(values[0]) / 1000
                         ir_temps = [float(values[i]) for i in range(1, 9)]
                         tc_temps = [float(values[9]), float(values[10])]
@@ -59,6 +62,7 @@ class SerialHandler:
 
 
                         self.data["time"].append(time_measured)
+                        self.data["laptop_time"].append(current_time)
                         for i in range(8):
                             self.data["ir_temp"][i].append(ir_temps[i])
                         for i in range(2):
@@ -101,7 +105,7 @@ class PlotHandler:
                 'visible': tk.BooleanVar(value=False),
                 'axis': self.ax_ir,
                 'title': "IR Temperature Readings",
-                'ylabel': "Temperature (°F)",
+                'ylabel': "Temp (°F)",
                 'xlabel': "Sensors"
             },
             'load': {
@@ -122,14 +126,14 @@ class PlotHandler:
                 'visible': tk.BooleanVar(value=False),
                 'axis': self.ax_tc1,
                 'title': "Pad Temperature vs Time",
-                'ylabel': "Temperature (°F)",
+                'ylabel': "Temp (°F)",
                 'xlabel': "Time (s)"
             },
             'tc2': {
                 'visible': tk.BooleanVar(value=False),
                 'axis': self.ax_tc2,
                 'title': "Caliper Temperature vs Time",
-                'ylabel': "Temperature (°F)",
+                'ylabel': "Temp (°F)",
                 'xlabel': "Time (s)"
             }
         }
@@ -166,6 +170,22 @@ class PlotHandler:
                            font=("Arial", 10, "bold"))
             label.pack(pady=2)
             self.ir_average_values.append(label)
+        
+        # Thermocouple frame
+        tc_frame = tk.Frame(self.average_frame, relief="solid", borderwidth=1)
+        tc_frame.pack(pady=10, padx=10, fill="x")
+    
+        self.tc_average_label = tk.Label(tc_frame, text="Thermocouple Temperatures", 
+                                   font=("Arial", 12, "bold"))
+        self.tc_average_label.pack(pady=5)
+    
+        self.pad_average_label = tk.Label(tc_frame, text="Pad Average: 0.00", 
+                                    font=("Arial", 10, "bold"))
+        self.pad_average_label.pack(pady=2)
+    
+        self.caliper_average_label = tk.Label(tc_frame, text="Caliper Average: 0.00", 
+                                        font=("Arial", 10, "bold"))
+        self.caliper_average_label.pack(pady=2)
 
         # Load Cell frame
         load_frame = tk.Frame(self.average_frame, relief="solid", borderwidth=1)
@@ -297,16 +317,62 @@ class PlotHandler:
                 ax.set_ylim(min(latest_ir_temps) - 10, max(latest_ir_temps) + 10)
             
             elif plot_name == 'load':
-                ax.plot(adjusted_times, self.serial_handler.data["load"], label="Load (N)", color="red")
+                load_data = self.serial_handler.data["load"]
+                min_length = min(len(adjusted_times), len(load_data))
+                adjusted_times = adjusted_times[:min_length]
+                load_data = load_data[:min_length]
+                ax.plot(adjusted_times, load_data, label="Load (N)", color="red")
+                if load_data:
+                    y_min, y_max = min(load_data), max(load_data)
+                    y_min, y_max = min(load_data), max(load_data)
+                    if y_min == y_max:  # If the min and max are identical, adjust the limits
+                        y_min -= 1
+                        y_max += 1
+                    margin = (y_max - y_min) * 0.1  # 10% margin
+                    ax.set_ylim(y_min - margin, y_max + margin)
+
                 
             elif plot_name == 'rpm':
-                ax.plot(adjusted_times, self.serial_handler.data["rotor_rpm"], label="Rotor RPM", color="green")
+                rpm_data = self.serial_handler.data["rotor_rpm"]
+                min_length = min(len(adjusted_times), len(rpm_data))
+                adjusted_times = adjusted_times[:min_length]
+                rpm_data = rpm_data[:min_length]
+                ax.plot(adjusted_times, rpm_data, label="Rotor RPM", color="green")
+                if rpm_data:
+                    y_min, y_max = min(rpm_data), max(rpm_data)
+                    if y_min == y_max:  # If the min and max are identical, adjust the limits
+                        y_min -= 1
+                        y_max += 1
+                    margin = (y_max - y_min) * 0.1
+                    ax.set_ylim(y_min - margin, y_max + margin)
                 
             elif plot_name == 'Thermo Pad':
-                ax.plot(adjusted_times, self.serial_handler.data["tc_temp"][0], label="Thermo Pad Temperature", color="purple")
+                tc_data = self.serial_handler.data["tc_temp"][0]
+                min_length = min(len(adjusted_times), len(tc_data))
+                adjusted_times = adjusted_times[:min_length]
+                tc_data = tc_data[:min_length]
+                ax.plot(adjusted_times, tc_data, label="Pad Temperature", color="purple")
+                if tc_data:
+                    y_min, y_max = min(tc_data), max(tc_data)
+                    if y_min == y_max:  # If the min and max are identical, adjust the limits
+                        y_min -= 1
+                        y_max += 1
+                    margin = (y_max - y_min) * 0.1
+                    ax.set_ylim(y_min - margin, y_max + margin)
                 
             elif plot_name == 'Caliper':
-                ax.plot(adjusted_times, self.serial_handler.data["tc_temp"][1], label="Caliper Temperature", color="orange")
+                tc_data = self.serial_handler.data["tc_temp"][1]
+                min_length = min(len(adjusted_times), len(tc_data))
+                adjusted_times = adjusted_times[:min_length]
+                tc_data = tc_data[:min_length]
+                ax.plot(adjusted_times, tc_data, label="Caliper Temperature", color="orange")
+                if tc_data:
+                    y_min, y_max = min(tc_data), max(tc_data)
+                    if y_min == y_max:  # If the min and max are identical, adjust the limits
+                        y_min -= 1
+                        y_max += 1
+                    margin = (y_max - y_min) * 0.1
+                    ax.set_ylim(y_min - margin, y_max + margin)
             
             # Restore axis properties
             ax.set_title(self.plots_info[plot_name]['title'], fontsize=16)
@@ -332,13 +398,19 @@ class PlotHandler:
         rpm_avg = self.calculate_running_average(self.serial_handler.data["rotor_rpm"])
         self.rpm_average_label.config(text=f"RPM Average: {rpm_avg:.2f}")
 
+        # Update Pad and Caliper averages
+        pad_avg = self.calculate_running_average(self.serial_handler.data["tc_temp"][0])
+        caliper_avg = self.calculate_running_average(self.serial_handler.data["tc_temp"][1])
+        self.pad_average_label.config(text=f"Pad Average: {pad_avg:.2f}")
+        self.caliper_average_label.config(text=f"Caliper Average: {caliper_avg:.2f}")
+
     def calculate_running_average(self, data):
         return sum(data) / len(data) if data else 0
 
     def start_plotting(self, serial_handler):
         self.serial_handler = serial_handler
         self.animation = animation.FuncAnimation(
-            self.fig, self.update_plot, interval=500, cache_frame_data=False
+            self.fig, self.update_plot, interval=0.1, cache_frame_data=False
         )
 
     def stop_plotting(self):
@@ -365,7 +437,7 @@ class RootGUI:
         
         left_icon_path = os.path.join(script_dir, "left_icon.png")
         self.left_icon = Image.open(left_icon_path)
-        self.left_icon = self.left_icon.resize((200, 200), Image.Resampling.LANCZOS)
+        self.left_icon = self.left_icon.resize((373, 169), Image.Resampling.LANCZOS)
         self.left_icon_tk = ImageTk.PhotoImage(self.left_icon)
 
         right_icon_path = os.path.join(script_dir, "right_icon.jpg")
@@ -455,7 +527,7 @@ class RootGUI:
             print("No data to export")
             return
 
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H_%M_%S")
         default_filename = f"data_{timestamp}.csv"
 
         file_path = filedialog.asksaveasfilename(
@@ -468,7 +540,7 @@ class RootGUI:
             try:
                 with open(file_path, 'w') as f:
                     # Write header
-                    header = "Time,IR1,IR2,IR3,IR4,IR5,IR6,IR7,IR8,PAD,Caliper,Load,Brake_Pressure,Rotor_RPM\n"
+                    header = "Time,IR1,IR2,IR3,IR4,IR5,IR6,IR7,IR8,PAD,Caliper,Load,Brake_Pressure,Rotor_RPM,Laptop_Time\n"
                     f.write(header)
 
                     # Adjust time to start at 0
@@ -482,9 +554,11 @@ class RootGUI:
                             line += f",{self.serial_handler.data['ir_temp'][j][i]}"
                         for j in range(2):
                             line += f",{self.serial_handler.data['tc_temp'][j][i]}"
+                        
                         line += f",{self.serial_handler.data['load'][i]}"
                         line += f",{self.serial_handler.data['brake_pressure'][i]}"
-                        line += f",{self.serial_handler.data['rotor_rpm'][i]}\n"
+                        line += f",{self.serial_handler.data['rotor_rpm'][i]}"
+                        line += f",{self.serial_handler.data['laptop_time'][i]}\n"
                         f.write(line)
 
                 print(f"Data exported successfully to {file_path}")

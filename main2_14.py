@@ -12,8 +12,10 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
 import sys
 
-# Enable auto light/dark mode
-ctk.set_appearance_mode("System")
+# Fixed colors for light mode
+TEXT_COLOR = "black"              # Text color for all widgets
+WIDGET_BG_COLOR = "white"         # Background color for all widgets
+ROOT_BG_COLOR = "#ebebeb"         # Outer frame background
 
 # Global Font Constants
 FONT_TITLE = ("Arial", 16, "bold")
@@ -21,20 +23,6 @@ FONT_HEADER = ("Arial", 14, "bold")
 FONT_SMALL = ("Arial", 14)
 FONT_BUTTON = ("Arial", 14, "bold")
 FONT_CHECKBOX = ("Arial", 14)
-
-# Global Text Colors for light/dark modes
-DARK_TEXT_COLOR = "white"
-LIGHT_TEXT_COLOR = "black"
-
-def get_text_color():
-    return DARK_TEXT_COLOR if ctk.get_appearance_mode() == "Dark" else LIGHT_TEXT_COLOR
-
-# Global widget foreground color constants
-WIDGET_FG_COLOR_DARK = "#2B2B2B"
-WIDGET_FG_COLOR_LIGHT = "white"
-
-def get_widget_fg_color():
-    return WIDGET_FG_COLOR_DARK if ctk.get_appearance_mode() == "Dark" else WIDGET_FG_COLOR_LIGHT
 
 # Global image height constants
 LEFT_ICON_HEIGHT = 150
@@ -46,8 +34,8 @@ def resize_image_to_height(image, height):
     return image.resize((new_width, height), Image.Resampling.LANCZOS)
 
 # Global constants for plotting
-PLOT_UPDATE_INTERVAL = 1000  # milliseconds
-MAX_PLOT_POINTS = 10000
+PLOT_UPDATE_INTERVAL = 1000  # milliseconds, how often to update the plot
+MAX_PLOT_POINTS = 6000       # Maximum number of points to display on the plot
 
 class SerialHandler:
     def __init__(self):
@@ -55,8 +43,6 @@ class SerialHandler:
         self.baudrate = 230400
         self.serial_connection = None
         self.running = False
-
-        # Save all received data here (all data are saved continuously)
         self.data = {
             "time": [],
             "laptop_time": [],
@@ -66,7 +52,6 @@ class SerialHandler:
             "brake_pressure": [],
             "rotor_rpm": []
         }
-        # File handle for export (active only while exporting)
         self.export_file = None
 
     def set_port(self, port):
@@ -95,8 +80,6 @@ class SerialHandler:
                         load_cell = float(values[11])
                         brake_pressure = float(values[12])
                         rotor_rpm = float(values[13])
-
-                        # Append data (all data are stored)
                         self.data["time"].append(time_measured)
                         self.data["laptop_time"].append(current_time)
                         for i in range(8):
@@ -106,8 +89,6 @@ class SerialHandler:
                         self.data["load"].append(load_cell)
                         self.data["brake_pressure"].append(brake_pressure)
                         self.data["rotor_rpm"].append(rotor_rpm)
-
-                        # Write to CSV if export is active (data from this point onward)
                         csv_line = f"{time_measured}," + ",".join([f"{v}" for v in ir_temps]) + \
                                    f",{tc_temps[0]},{tc_temps[1]},{load_cell},{brake_pressure},{rotor_rpm},{current_time}\n"
                         if self.export_file is not None:
@@ -128,47 +109,42 @@ class SerialHandler:
 class PlotHandler:
     def __init__(self, root):
         self.root = root
-        self.plot_frame = None
         self.canvas = None
         self.animation = None
         self.serial_handler = None
-        # All plots visible by default; these names are used in the checkboxes
         self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2"]
-        # Dictionary to hold plot objects for efficient updating
         self.plot_objects = {}
-
-        # Create figure
         self.fig = plt.figure(figsize=(10, 20))
         self.plots_info = {
             'ir_temp': {
                 'visible': BooleanVar(value=True),
-                'title': "IR Temperature Readings",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Sensors"
+                'title': "IR Temperature Readings",  # Not displayed on graph
+                'ylabel': "Temp (°C)",
+                'xlabel': "Sensors"  # Not used
             },
             'load': {
                 'visible': BooleanVar(value=True),
-                'title': "Load Cell Force vs Time",
-                'ylabel': "Force (N)",
-                'xlabel': "Time (s)"
+                'title': "Load Cell Force vs Time",  # Not displayed on graph
+                'ylabel': "Force (lbs)",
+                'xlabel': "Time (s)"  # Not used
             },
             'rpm': {
                 'visible': BooleanVar(value=True),
-                'title': "Rotor RPM vs Time",
+                'title': "Rotor RPM vs Time",  # Not displayed on graph
                 'ylabel': "RPM",
-                'xlabel': "Time (s)"
+                'xlabel': "Time (s)"  # Not used
             },
             'tc1': {
                 'visible': BooleanVar(value=True),
-                'title': "Pad Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
+                'title': "Pad Temperature vs Time",  # Not displayed on graph
+                'ylabel': "Temp (°C)",
+                'xlabel': "Time (s)"  # Not used
             },
             'tc2': {
                 'visible': BooleanVar(value=True),
-                'title': "Caliper Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
+                'title': "Caliper Temperature vs Time",  # Not displayed on graph
+                'ylabel': "Temp (°C)",
+                'xlabel': "Time (s)"  # Not used
             }
         }
         self.ir_labels = [f"IR {i+1}" for i in range(8)]
@@ -176,48 +152,38 @@ class PlotHandler:
         self.setup_control_panel()
 
     def setup_average_frame(self):
-        self.average_frame = ctk.CTkFrame(self.root, fg_color=get_widget_fg_color(), corner_radius=15)
-        self.average_frame.pack(side="left", fill="y", padx=10, pady=10)
-        title_label = ctk.CTkLabel(self.average_frame, text="Running Averages", font=FONT_TITLE, text_color=get_text_color())
-        title_label.pack(pady=10)
-
-        # IR Sensors frame
-        ir_frame = ctk.CTkFrame(self.average_frame, fg_color=get_widget_fg_color())
+        self.average_frame = ctk.CTkFrame(self.root, fg_color=WIDGET_BG_COLOR, corner_radius=15)
+        self.average_frame.pack(side="left", fill="y", padx=(10, 0), pady=10)
+        ir_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR)
         ir_frame.pack(pady=5, padx=10, fill="x")
-        self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures", font=FONT_HEADER, text_color=get_text_color())
-        self.ir_average_label.pack(pady=5)
+        self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures", font=FONT_HEADER, text_color=TEXT_COLOR)
+        self.ir_average_label.pack(pady=(15,5))
         self.ir_average_values = []
         for i in range(8):
-            label = ctk.CTkLabel(ir_frame, text=f"IR {i+1}: 0.00", font=FONT_SMALL, text_color=get_text_color())
+            label = ctk.CTkLabel(ir_frame, text=f"IR {i+1}: 0.00", font=FONT_SMALL, text_color=TEXT_COLOR)
             label.pack(pady=1)
             self.ir_average_values.append(label)
-
-        # Thermocouple frame
-        tc_frame = ctk.CTkFrame(self.average_frame, fg_color=get_widget_fg_color(), corner_radius=0)
+        tc_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         tc_frame.pack(pady=10, padx=10, fill="x")
-        self.tc_average_label = ctk.CTkLabel(tc_frame, text="Thermocouple Temperatures", font=FONT_HEADER, text_color=get_text_color())
+        self.tc_average_label = ctk.CTkLabel(tc_frame, text="Thermocouple Temperatures", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.tc_average_label.pack(pady=5)
-        self.pad_average_label = ctk.CTkLabel(tc_frame, text="Pad Average: 0.00", font=FONT_SMALL, text_color=get_text_color())
+        self.pad_average_label = ctk.CTkLabel(tc_frame, text="Pad Average: 0.00", font=FONT_SMALL, text_color=TEXT_COLOR)
         self.pad_average_label.pack(pady=2)
-        self.caliper_average_label = ctk.CTkLabel(tc_frame, text="Caliper Average: 0.00", font=FONT_SMALL, text_color=get_text_color())
+        self.caliper_average_label = ctk.CTkLabel(tc_frame, text="Caliper Average: 0.00", font=FONT_SMALL, text_color=TEXT_COLOR)
         self.caliper_average_label.pack(pady=1)
-
-        # Load Cell frame
-        load_frame = ctk.CTkFrame(self.average_frame, fg_color=get_widget_fg_color(), corner_radius=0)
+        load_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         load_frame.pack(pady=10, padx=10, fill="x")
-        self.load_average_label = ctk.CTkLabel(load_frame, text="Load Cell Average: 0.00", font=FONT_HEADER, text_color=get_text_color())
+        self.load_average_label = ctk.CTkLabel(load_frame, text="Load Cell Average: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.load_average_label.pack(pady=1)
-
-        # RPM frame
-        rpm_frame = ctk.CTkFrame(self.average_frame, fg_color=get_widget_fg_color(), corner_radius=0)
+        rpm_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         rpm_frame.pack(pady=10, padx=10, fill="x")
-        self.rpm_average_label = ctk.CTkLabel(rpm_frame, text="RPM Average: 0.00", font=FONT_HEADER, text_color=get_text_color())
+        self.rpm_average_label = ctk.CTkLabel(rpm_frame, text="RPM Average: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.rpm_average_label.pack(pady=1)
 
     def setup_control_panel(self):
-        control_frame = ctk.CTkFrame(self.average_frame, fg_color=get_widget_fg_color(), corner_radius=0)
+        control_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         control_frame.pack(pady=10, padx=10, fill="x")
-        ctk.CTkLabel(control_frame, text="Display Graphs", font=FONT_TITLE, text_color=get_text_color()).pack(pady=5)
+        ctk.CTkLabel(control_frame, text="Display Graphs", font=FONT_TITLE, text_color=TEXT_COLOR).pack(pady=5)
         for plot_name, info in self.plots_info.items():
             ctk.CTkCheckBox(
                 control_frame,
@@ -225,22 +191,22 @@ class PlotHandler:
                 variable=info['visible'],
                 command=self.update_plot_layout,
                 font=FONT_CHECKBOX,
-                text_color=get_text_color()
+                text_color=TEXT_COLOR
             ).pack(anchor='w', pady=10)
-        # A button to force refresh the plot layout
         self.refresh_button = ctk.CTkButton(
             control_frame,
             text="Refresh Plots",
             command=self.update_plot_layout,
             font=FONT_BUTTON,
-            text_color=get_text_color()
+            fg_color="#eeeeee",
+            text_color="#131313",
+            hover_color="#48aeff",
         )
         self.refresh_button.pack(pady=10)
 
     def update_plot_layout(self):
-        # Recreate the subplots based on current checkbox selections
         self.visible_plots = [name for name, info in self.plots_info.items() if info['visible'].get()]
-        self.plot_objects = {}  # clear previous plot objects
+        self.plot_objects = {}
         self.fig.clf()
         num_visible = len(self.visible_plots)
         if num_visible == 0:
@@ -248,8 +214,6 @@ class PlotHandler:
             return
         for i, plot_name in enumerate(self.visible_plots):
             ax = self.fig.add_subplot(num_visible, 1, i + 1)
-            ax.set_title(self.plots_info[plot_name]['title'], fontsize=16)
-            ax.set_xlabel(self.plots_info[plot_name]['xlabel'], fontsize=14)
             ax.set_ylabel(self.plots_info[plot_name]['ylabel'], fontsize=14)
             ax.grid(True, linestyle="--", alpha=0.7)
             self.plots_info[plot_name]['axis'] = ax
@@ -263,7 +227,6 @@ class PlotHandler:
         start_time = times[0]
         rel_times = [t - start_time for t in times]
         plot_times = rel_times[-MAX_PLOT_POINTS:]
-        
         for plot_name in self.visible_plots:
             ax = self.plots_info[plot_name]['axis']
             if plot_name == 'ir_temp':
@@ -281,11 +244,11 @@ class PlotHandler:
                     line = self.plot_objects["load"]
                     line.set_data(plot_times, y_data)
                 else:
-                    line, = ax.plot(plot_times, y_data, label="Load (N)", color="red")
+                    line, = ax.plot(plot_times, y_data, label="Load (lbs)", color="red")
                     self.plot_objects["load"] = line
                 ax.relim()
                 ax.autoscale_view()
-                ax.legend()
+                ax.legend(loc="upper left")
             elif plot_name == 'rpm':
                 y_data = self.serial_handler.data["rotor_rpm"][-MAX_PLOT_POINTS:]
                 if "rpm" in self.plot_objects:
@@ -296,7 +259,7 @@ class PlotHandler:
                     self.plot_objects["rpm"] = line
                 ax.relim()
                 ax.autoscale_view()
-                ax.legend()
+                ax.legend(loc="upper left")
             elif plot_name == 'tc1':
                 y_data = self.serial_handler.data["tc_temp"][0][-MAX_PLOT_POINTS:]
                 if "tc1" in self.plot_objects:
@@ -307,7 +270,7 @@ class PlotHandler:
                     self.plot_objects["tc1"] = line
                 ax.relim()
                 ax.autoscale_view()
-                ax.legend()
+                ax.legend(loc="upper left")
             elif plot_name == 'tc2':
                 y_data = self.serial_handler.data["tc_temp"][1][-MAX_PLOT_POINTS:]
                 if "tc2" in self.plot_objects:
@@ -318,7 +281,7 @@ class PlotHandler:
                     self.plot_objects["tc2"] = line
                 ax.relim()
                 ax.autoscale_view()
-                ax.legend()
+                ax.legend(loc="upper left")
         self.update_averages()
         self.canvas.draw()
 
@@ -350,7 +313,8 @@ class PlotHandler:
 class RootGUI:
     def __init__(self):
         self.root = ctk.CTk()
-        self.root.title("DAQ Data Readings")
+        ctk.set_appearance_mode("light")
+        self.root.title("Brake Dyno Data Acquisition")
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         self.root.geometry(f"{screen_width}x{screen_height}")
@@ -380,68 +344,89 @@ class RootGUI:
         self.serial_handler.set_port(selected_port)
 
     def create_widgets(self):
-        icon_frame = ctk.CTkFrame(self.root, fg_color=get_widget_fg_color(), corner_radius=15)
-        icon_frame.pack(fill="x", padx=10, pady=10)
-        left_icon_label = ctk.CTkLabel(icon_frame, image=self.left_icon_ctk, text="", text_color=get_text_color())
+        # Outer main frame with adjustable background
+        main_frame = ctk.CTkFrame(self.root, fg_color=ROOT_BG_COLOR, corner_radius=0)
+        main_frame.pack(expand=True, fill="both")
+        
+        icon_frame = ctk.CTkFrame(main_frame, fg_color=WIDGET_BG_COLOR, corner_radius=15)
+        icon_frame.pack(fill="x", padx=10, pady=(10, 0))
+        left_icon_label = ctk.CTkLabel(icon_frame, image=self.left_icon_ctk, text="", text_color=TEXT_COLOR)
         left_icon_label.pack(side="left", padx=20)
-        center_frame = ctk.CTkFrame(icon_frame, fg_color=get_widget_fg_color(), corner_radius=15)
+        center_frame = ctk.CTkFrame(icon_frame, fg_color=WIDGET_BG_COLOR, corner_radius=15)
         center_frame.pack(side="left", expand=True, fill="x", padx=20)
-        button_frame = ctk.CTkFrame(center_frame, fg_color=get_widget_fg_color(), corner_radius=15)
-        button_frame.pack(pady=5)
-        ctk.CTkButton(
-            button_frame, text="START", font=FONT_BUTTON,
-            command=self.start_reading, fg_color="#baffc9", text_color=get_text_color()
-        ).pack(side="left", padx=10)
-        ctk.CTkButton(
-            button_frame, text="STOP", font=FONT_BUTTON,
-            command=self.stop_reading, fg_color="#ffb3ba", text_color=get_text_color()
-        ).pack(side="left", padx=10)
-        ctk.CTkButton(
-            button_frame, text="Select Export Folder", font=FONT_BUTTON,
-            command=self.select_export_folder, fg_color="#d0d0ff", text_color=get_text_color()
-        ).pack(side="left", padx=10)
-        ctk.CTkButton(
-            button_frame, text="EXPORT", font=FONT_BUTTON,
-            command=self.start_export, fg_color="#baffc9", text_color=get_text_color()
-        ).pack(side="left", padx=10)
-        ctk.CTkButton(
-            button_frame, text="STOP EXPORT", font=FONT_BUTTON,
-            command=self.stop_export, fg_color="#ffb3ba", text_color=get_text_color()
-        ).pack(side="left", padx=10)
-        com_frame = ctk.CTkFrame(center_frame, fg_color=get_widget_fg_color(), corner_radius=0)
-        com_frame.pack(pady=5)
-        ctk.CTkLabel(com_frame, text="Select COM Port:", font=FONT_HEADER, text_color=get_text_color()).pack(side="left", padx=5)
-        available_ports = self.get_available_ports()
-        self.com_port_dropdown = ctk.CTkComboBox(com_frame, values=available_ports, font=FONT_HEADER,
+        
+        # Create a grid frame for the buttons (3 rows x 2 columns)
+        grid_frame = ctk.CTkFrame(center_frame, fg_color=WIDGET_BG_COLOR, corner_radius=15)
+        grid_frame.pack(pady=5, anchor="center")
+        grid_frame.grid_columnconfigure(0, weight=1)
+        grid_frame.grid_columnconfigure(1, weight=1)
+        
+        # Row 0: COM dropdown, Select Export Folder
+        self.com_port_dropdown = ctk.CTkComboBox(grid_frame, values=self.get_available_ports(), font=FONT_HEADER,
                                                   width=100, command=self.update_port_selection)
-        if available_ports:
-            self.com_port_dropdown.set(available_ports[0])
-            self.serial_handler.set_port(available_ports[0])
-        self.com_port_dropdown.pack(side="left", padx=10)
-        right_icon_label = ctk.CTkLabel(icon_frame, image=self.right_icon_ctk, text="", text_color=get_text_color())
+        if self.get_available_ports():
+            self.com_port_dropdown.set(self.get_available_ports()[0])
+            self.serial_handler.set_port(self.get_available_ports()[0])
+        self.com_port_dropdown.grid(row=0, column=0, padx=10, pady=5)
+        self.export_folder_button = ctk.CTkButton(grid_frame, text="Select Export Folder", font=FONT_BUTTON,
+                                                  command=self.select_export_folder, fg_color="#d0d0ff", 
+                                                  hover_color="#b0b0ff", text_color=TEXT_COLOR)
+        self.export_folder_button.grid(row=0, column=1, padx=10, pady=5)
+        
+        # Row 1: START, EXPORT
+        self.start_button = ctk.CTkButton(grid_frame, text="START", font=FONT_BUTTON,
+                                          command=self.start_reading, fg_color="#baffc9", 
+                                          hover_color="#89e4a4", text_color=TEXT_COLOR)
+        self.start_button.grid(row=1, column=0, padx=10, pady=5)
+        self.export_button = ctk.CTkButton(grid_frame, text="EXPORT", font=FONT_BUTTON,
+                                           command=self.start_export, fg_color="#baffc9", 
+                                           hover_color="#89e4a4", text_color=TEXT_COLOR)
+        self.export_button.grid(row=1, column=1, padx=10, pady=5)
+        
+        # Row 2: STOP, STOP EXPORT
+        self.stop_button = ctk.CTkButton(grid_frame, text="STOP", font=FONT_BUTTON,
+                                         command=self.stop_reading, fg_color="#ffb3ba", 
+                                         hover_color="#ff8ca3", text_color=TEXT_COLOR)
+        self.stop_button.grid(row=2, column=0, padx=10, pady=5)
+        self.stop_export_button = ctk.CTkButton(grid_frame, text="STOP EXPORT", font=FONT_BUTTON,
+                                                command=self.stop_export, fg_color="#ffb3ba", 
+                                                hover_color="#ff8ca3", text_color=TEXT_COLOR)
+        self.stop_export_button.grid(row=2, column=1, padx=10, pady=5)
+        
+        right_icon_label = ctk.CTkLabel(icon_frame, image=self.right_icon_ctk, text="", text_color=TEXT_COLOR)
         right_icon_label.pack(side="right", padx=20, pady=10)
-        plot_frame = ctk.CTkFrame(self.root, fg_color=get_widget_fg_color(), corner_radius=15)
+        
+        plot_frame = ctk.CTkFrame(main_frame, fg_color=WIDGET_BG_COLOR, corner_radius=15)
         plot_frame.pack(expand=True, fill="both", padx=10, pady=10)
-        # Instead of calling create_plots(), manually create the canvas and call update_plot()
         self.plot_handler.canvas = FigureCanvasTkAgg(self.plot_handler.fig, master=plot_frame)
         self.plot_handler.canvas.get_tk_widget().pack(fill="both", expand=True, padx=20, pady=10)
         self.plot_handler.update_plot(0)
+        
+        # Add "About Program" button at the bottom of the left (average) frame.
+        about_button = ctk.CTkButton(self.plot_handler.average_frame, text="About Program", font=FONT_BUTTON,
+                                     fg_color="#eeeeee", hover_color="#48aeff", text_color="#131313",
+                                     command=self.show_about_popup)
+        about_button.pack(side="bottom", fill="x", padx=10, pady=(10,15))
 
     def select_export_folder(self):
         folder = filedialog.askdirectory(title="Select Export Folder")
         if folder:
             self.export_folder = folder
+            self.export_folder_button.configure(text=f"Export Folder: {os.path.basename(folder)}")
             print(f"Export folder set to: {folder}")
         else:
             self.export_folder = None
+            self.export_folder_button.configure(text="Select Export Folder")
             print("No folder selected.")
 
     def start_reading(self):
+        self.plot_handler.update_plot_layout()
         selected_port = self.com_port_dropdown.get()
         if selected_port:
             self.serial_handler.set_port(selected_port)
             self.serial_handler.start_serial()
             self.plot_handler.start_plotting(self.serial_handler)
+            self.root.after(100, self.plot_handler.update_plot, 0)
         else:
             print("Please select a COM port.")
 
@@ -449,7 +434,7 @@ class RootGUI:
         if not self.export_folder:
             print("Please select a valid export folder first.")
             return
-        timestamp = datetime.now().strftime("%Y%m%d_%H_%M_%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         csv_filename = os.path.join(self.export_folder, f"data_{timestamp}.csv")
         try:
             f = open(csv_filename, "w")
@@ -471,6 +456,15 @@ class RootGUI:
     def stop_reading(self):
         self.serial_handler.stop_serial()
         self.plot_handler.stop_plotting()
+
+    def show_about_popup(self):
+        popup = ctk.CTkToplevel(self.root)
+        popup.title("About Program")
+        popup.geometry("400x200")
+        about_label = ctk.CTkLabel(popup, text="This is placeholder text for the About Program information.", font=FONT_HEADER, text_color=TEXT_COLOR)
+        about_label.pack(padx=20, pady=20)
+        close_button = ctk.CTkButton(popup, text="Close", font=FONT_BUTTON, fg_color="#baffc9", hover_color="#89e4a4", text_color=TEXT_COLOR, command=popup.destroy)
+        close_button.pack(pady=(0,20))
 
     def on_closing(self):
         self.stop_export()

@@ -191,7 +191,13 @@ class PlotHandler:
                 variable=info['visible'],
                 command=self.update_plot_layout,
                 font=FONT_CHECKBOX,
-                text_color=TEXT_COLOR
+                text_color=TEXT_COLOR,
+                fg_color="#ffffff",
+                checkmark_color="#48aeff",
+                hover_color="#eeeeee",
+                border_color="#48aeff",
+                border_width=2,
+                corner_radius=5
             ).pack(anchor='w', pady=10)
         self.refresh_button = ctk.CTkButton(
             control_frame,
@@ -376,21 +382,21 @@ class RootGUI:
         # Row 1: START, EXPORT
         self.start_button = ctk.CTkButton(grid_frame, text="START", font=FONT_BUTTON,
                                           command=self.start_reading, fg_color="#baffc9", 
-                                          hover_color="#89e4a4", text_color=TEXT_COLOR)
+                                          hover_color="#89e4a4", text_color=TEXT_COLOR, text_color_disabled="#555555")
         self.start_button.grid(row=1, column=0, padx=10, pady=5)
-        self.export_button = ctk.CTkButton(grid_frame, text="EXPORT", font=FONT_BUTTON,
+        self.export_button = ctk.CTkButton(grid_frame, text="START EXPORT", font=FONT_BUTTON,
                                            command=self.start_export, fg_color="#baffc9", 
-                                           hover_color="#89e4a4", text_color=TEXT_COLOR)
+                                           hover_color="#89e4a4", text_color=TEXT_COLOR, state="disabled", text_color_disabled="#555555")
         self.export_button.grid(row=1, column=1, padx=10, pady=5)
         
         # Row 2: STOP, STOP EXPORT
         self.stop_button = ctk.CTkButton(grid_frame, text="STOP", font=FONT_BUTTON,
                                          command=self.stop_reading, fg_color="#ffb3ba", 
-                                         hover_color="#ff8ca3", text_color=TEXT_COLOR)
+                                         hover_color="#ff8ca3", text_color=TEXT_COLOR, state="disabled", text_color_disabled="#555555")
         self.stop_button.grid(row=2, column=0, padx=10, pady=5)
         self.stop_export_button = ctk.CTkButton(grid_frame, text="STOP EXPORT", font=FONT_BUTTON,
                                                 command=self.stop_export, fg_color="#ffb3ba", 
-                                                hover_color="#ff8ca3", text_color=TEXT_COLOR)
+                                                hover_color="#ff8ca3", text_color=TEXT_COLOR, state="disabled", text_color_disabled="#555555")
         self.stop_export_button.grid(row=2, column=1, padx=10, pady=5)
         
         right_icon_label = ctk.CTkLabel(icon_frame, image=self.right_icon_ctk, text="", text_color=TEXT_COLOR)
@@ -413,10 +419,13 @@ class RootGUI:
         if folder:
             self.export_folder = folder
             self.export_folder_button.configure(text=f"Export Folder: {os.path.basename(folder)}")
+            # Enable the start export button once a folder is selected
+            self.export_button.configure(state="normal")
             print(f"Export folder set to: {folder}")
         else:
             self.export_folder = None
             self.export_folder_button.configure(text="Select Export Folder")
+            self.export_button.configure(state="disabled")
             print("No folder selected.")
 
     def start_reading(self):
@@ -427,21 +436,38 @@ class RootGUI:
             self.serial_handler.start_serial()
             self.plot_handler.start_plotting(self.serial_handler)
             self.root.after(100, self.plot_handler.update_plot, 0)
+            # Toggle button states: disable start and enable stop for reading
+            self.start_button.configure(state="disabled")
+            self.stop_button.configure(state="normal")
+            # Optionally disable the COM port dropdown while running
+            self.com_port_dropdown.configure(state="disabled")
         else:
             print("Please select a COM port.")
+
+    def stop_reading(self):
+        self.serial_handler.stop_serial()
+        self.plot_handler.stop_plotting()
+        # Toggle button states: enable start and disable stop for reading
+        self.start_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
+        # Re-enable the COM port dropdown after stopping
+        self.com_port_dropdown.configure(state="normal")
 
     def start_export(self):
         if not self.export_folder:
             print("Please select a valid export folder first.")
             return
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        csv_filename = os.path.join(self.export_folder, f"data_{timestamp}.csv")
+        timestamp = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
+        csv_filename = os.path.join(self.export_folder, f"data--{timestamp}.csv")
         try:
             f = open(csv_filename, "w")
             header = "Time,IR1,IR2,IR3,IR4,IR5,IR6,IR7,IR8,PAD,Caliper,Load,Brake_Pressure,Rotor_RPM,Laptop_Time\n"
             f.write(header)
             self.serial_handler.export_file = f
             print(f"Export file created: {csv_filename}")
+            # Toggle export button states: disable export button and enable stop export button
+            self.export_button.configure(state="disabled")
+            self.stop_export_button.configure(state="normal")
         except Exception as e:
             print(f"Error creating export file: {e}")
 
@@ -450,12 +476,11 @@ class RootGUI:
             self.serial_handler.export_file.close()
             self.serial_handler.export_file = None
             print("Export stopped.")
+            # Toggle export button states: enable export button and disable stop export button
+            self.export_button.configure(state="normal")
+            self.stop_export_button.configure(state="disabled")
         else:
             print("No export active.")
-
-    def stop_reading(self):
-        self.serial_handler.stop_serial()
-        self.plot_handler.stop_plotting()
 
     def show_about_popup(self):
         popup = ctk.CTkToplevel(self.root)

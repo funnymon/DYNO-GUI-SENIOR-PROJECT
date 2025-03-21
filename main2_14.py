@@ -49,7 +49,7 @@ class SerialHandler:
             "ir_temp": [[] for _ in range(8)],
             "tc_temp": [[], []],
             "load": [],
-            "brake_pressure": [],
+            "brake_pressure": [],  # Brake pressure data (in PSI)
             "rotor_rpm": []
         }
         self.export_file = None
@@ -112,39 +112,45 @@ class PlotHandler:
         self.canvas = None
         self.animation = None
         self.serial_handler = None
-        self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2"]
+        self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2", "brake_pressure"]  # Added brake pressure to visible_plots list
         self.plot_objects = {}
         self.fig = plt.figure(figsize=(10, 20))
         self.plots_info = {
             'ir_temp': {
                 'visible': BooleanVar(value=True),
-                'title': "IR Temperature Readings",  # Not displayed on graph
+                'title': "IR Temperature Readings",
                 'ylabel': "Temp (°C)",
-                'xlabel': "Sensors"  # Not used
+                'xlabel': "Sensors"
             },
             'load': {
                 'visible': BooleanVar(value=True),
-                'title': "Load Cell Force vs Time",  # Not displayed on graph
+                'title': "Load Cell Force vs Time",
                 'ylabel': "Force (lbs)",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
             },
             'rpm': {
                 'visible': BooleanVar(value=True),
-                'title': "Rotor RPM vs Time",  # Not displayed on graph
+                'title': "Rotor RPM vs Time",
                 'ylabel': "RPM",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
             },
             'tc1': {
                 'visible': BooleanVar(value=True),
-                'title': "Pad Temperature vs Time",  # Not displayed on graph
+                'title': "Pad Temperature vs Time",
                 'ylabel': "Temp (°C)",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
             },
             'tc2': {
                 'visible': BooleanVar(value=True),
-                'title': "Caliper Temperature vs Time",  # Not displayed on graph
+                'title': "Caliper Temperature vs Time",
                 'ylabel': "Temp (°C)",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
+            },
+            'brake_pressure': {  # New plot info for brake pressure
+                'visible': BooleanVar(value=True),
+                'title': "Brake Pressure vs Time",
+                'ylabel': "Pressure (PSI)",
+                'xlabel': "Time (s)"
             }
         }
         self.ir_labels = [f"IR {i+1}" for i in range(8)]
@@ -285,6 +291,17 @@ class PlotHandler:
                 else:
                     line, = ax.plot(plot_times, y_data, label="Caliper Temperature", color="orange")
                     self.plot_objects["tc2"] = line
+                ax.relim()
+                ax.autoscale_view()
+                ax.legend(loc="upper left")
+            elif plot_name == 'brake_pressure':  # New branch for brake pressure plot
+                y_data = self.serial_handler.data["brake_pressure"][-MAX_PLOT_POINTS:]
+                if "brake_pressure" in self.plot_objects:
+                    line = self.plot_objects["brake_pressure"]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label="Brake Pressure (PSI)", color="brown")
+                    self.plot_objects["brake_pressure"] = line
                 ax.relim()
                 ax.autoscale_view()
                 ax.legend(loc="upper left")

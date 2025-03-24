@@ -89,6 +89,7 @@ class SerialHandler:
                         self.data["load"].append(load_cell)
                         self.data["brake_pressure"].append(brake_pressure)
                         self.data["rotor_rpm"].append(rotor_rpm)
+                        # Save data as is (in °C for IR sensors)
                         csv_line = f"{time_measured}," + ",".join([f"{v}" for v in ir_temps]) + \
                                    f",{tc_temps[0]},{tc_temps[1]},{load_cell},{brake_pressure},{rotor_rpm},{current_time}\n"
                         if self.export_file is not None:
@@ -119,7 +120,7 @@ class PlotHandler:
             'ir_temp': {
                 'visible': BooleanVar(value=True),
                 'title': "IR Temperature Readings",
-                'ylabel': "Temp (°C)",
+                'ylabel': "Temp (°F)",  # Changed label to °F
                 'xlabel': "Sensors"
             },
             'load': {
@@ -162,7 +163,8 @@ class PlotHandler:
         self.average_frame.pack(side="left", fill="y", padx=(10, 0), pady=10)
         ir_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR)
         ir_frame.pack(pady=5, padx=10, fill="x")
-        self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures", font=FONT_HEADER, text_color=TEXT_COLOR)
+        # Optionally, update the label to indicate °F
+        self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures (°F)", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.ir_average_label.pack(pady=(15,5))
         self.ir_average_values = []
         for i in range(8):
@@ -242,14 +244,16 @@ class PlotHandler:
         for plot_name in self.visible_plots:
             ax = self.plots_info[plot_name]['axis']
             if plot_name == 'ir_temp':
-                latest_ir_temps = [self.serial_handler.data["ir_temp"][i][-1] for i in range(8)]
+                # Convert IR temperatures from °C to °F for display in the GUI.
+                latest_ir_temps_C = [self.serial_handler.data["ir_temp"][i][-1] for i in range(8)]
+                latest_ir_temps_F = [temp * 9/5 + 32 for temp in latest_ir_temps_C]
                 if "ir_temp" in self.plot_objects:
-                    for rect, h in zip(self.plot_objects["ir_temp"], latest_ir_temps):
+                    for rect, h in zip(self.plot_objects["ir_temp"], latest_ir_temps_F):
                         rect.set_height(h)
                 else:
-                    bars = ax.bar(self.ir_labels, latest_ir_temps, color="blue")
+                    bars = ax.bar(self.ir_labels, latest_ir_temps_F, color="blue")
                     self.plot_objects["ir_temp"] = bars
-                ax.set_ylim(min(latest_ir_temps) - 10, max(latest_ir_temps) + 10)
+                ax.set_ylim(min(latest_ir_temps_F) - 10, max(latest_ir_temps_F) + 10)
             elif plot_name == 'load':
                 y_data = self.serial_handler.data["load"][-MAX_PLOT_POINTS:]
                 if "load" in self.plot_objects:
@@ -311,8 +315,12 @@ class PlotHandler:
     def update_averages(self):
         for i in range(8):
             data = self.serial_handler.data["ir_temp"][i]
-            avg = sum(data) / len(data) if data else 0
-            self.ir_average_values[i].configure(text=f"IR {i+1}: {avg:.2f}")
+            if data:
+                avg_C = sum(data) / len(data)
+                avg_F = avg_C * 9/5 + 32  # Convert to °F
+            else:
+                avg_F = 0
+            self.ir_average_values[i].configure(text=f"IR {i+1}: {avg_F:.2f}")
         for key, label in [("load", self.load_average_label),
                            ("rotor_rpm", self.rpm_average_label)]:
             data = self.serial_handler.data[key]

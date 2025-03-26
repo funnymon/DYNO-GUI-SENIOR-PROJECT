@@ -12,7 +12,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
 import sys
 
-# Fixed colors for light mode
+# Fixed colors for light mode!
 TEXT_COLOR = "black"              # Text color for all widgets
 WIDGET_BG_COLOR = "white"         # Background color for all widgets
 ROOT_BG_COLOR = "#ebebeb"         # Outer frame background

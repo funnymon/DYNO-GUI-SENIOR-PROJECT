@@ -49,7 +49,7 @@ class SerialHandler:
             "ir_temp": [[] for _ in range(8)],
             "tc_temp": [[], []],
             "load": [],
-            "brake_pressure": [],
+            "brake_pressure": [],  # Brake pressure data (in PSI)
             "rotor_rpm": []
         }
         self.export_file = None
@@ -89,6 +89,7 @@ class SerialHandler:
                         self.data["load"].append(load_cell)
                         self.data["brake_pressure"].append(brake_pressure)
                         self.data["rotor_rpm"].append(rotor_rpm)
+                        # Save data as is (in °C for IR sensors)
                         csv_line = f"{time_measured}," + ",".join([f"{v}" for v in ir_temps]) + \
                                    f",{tc_temps[0]},{tc_temps[1]},{load_cell},{brake_pressure},{rotor_rpm},{current_time}\n"
                         if self.export_file is not None:
@@ -112,51 +113,269 @@ class PlotHandler:
         self.canvas = None
         self.animation = None
         self.serial_handler = None
-        self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2"]
+        self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2", "brake_pressure"]  # Added brake pressure to visible_plots list
         self.plot_objects = {}
         self.fig = plt.figure(figsize=(10, 20))
         self.plots_info = {
             'ir_temp': {
                 'visible': BooleanVar(value=True),
-                'title': "IR Temperature Readings",  # Not displayed on graph
-                'ylabel': "Temp (°C)",
-                'xlabel': "Sensors"  # Not used
+                'title': "IR Temperature Readings",
+                'ylabel': "Temp (°F)",  # Changed label to °F
+                'xlabel': "Sensors"
             },
             'load': {
                 'visible': BooleanVar(value=True),
-                'title': "Load Cell Force vs Time",  # Not displayed on graph
+                'title': "Load Cell Force vs Time",
                 'ylabel': "Force (lbs)",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
             },
             'rpm': {
                 'visible': BooleanVar(value=True),
-                'title': "Rotor RPM vs Time",  # Not displayed on graph
+                'title': "Rotor RPM vs Time",
                 'ylabel': "RPM",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
             },
             'tc1': {
                 'visible': BooleanVar(value=True),
-                'title': "Pad Temperature vs Time",  # Not displayed on graph
+                'title': "Pad Temperature vs Time",
                 'ylabel': "Temp (°C)",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
             },
             'tc2': {
                 'visible': BooleanVar(value=True),
-                'title': "Caliper Temperature vs Time",  # Not displayed on graph
+                'title': "Caliper Temperature vs Time",
                 'ylabel': "Temp (°C)",
-                'xlabel': "Time (s)"  # Not used
+                'xlabel': "Time (s)"
+            },
+            'brake_pressure': {  # New plot info for brake pressure
+                'visible': BooleanVar(value=True),
+                'title': "Brake Pressure vs Time",
+                'ylabel': "Pressure (PSI)",
+                'xlabel': "Time (s)"
             }
         }
         self.ir_labels = [f"IR {i+1}" for i in range(8)]
         self.setup_average_frame()
         self.setup_control_panel()
 
+    def show_about_popup(self):
+            # Create settings popup window
+            popup = ctk.CTkToplevel(self.root)
+            popup.title("Settings & About")
+            popup.geometry("500x600")
+    
+            # Make it appear on top of the main window
+            popup.transient(self.root)  # Set as transient to main window
+            popup.grab_set()  # Make it modal
+            popup.focus_set()  # Give it keyboard focus
+    
+            # Optional: Center the popup relative to the main window
+            popup.geometry(f"+{self.root.winfo_x() + 50}+{self.root.winfo_y() + 50}")
+    
+            # Create a tabview to organize settings and about info
+            tabview = ctk.CTkTabview(popup, width=480, height=550)
+            tabview.pack(padx=10, pady=10, fill="both", expand=True)
+    
+            # Create tabs
+            settings_tab = tabview.add("Settings")
+            about_tab = tabview.add("About")
+    
+            # Settings Tab
+            settings_tab.grid_columnconfigure(0, weight=1)
+            settings_tab.grid_columnconfigure(1, weight=1)
+    
+            # Section 1: Units Settings
+            units_frame = ctk.CTkFrame(settings_tab, fg_color=WIDGET_BG_COLOR, corner_radius=10)
+            units_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="ew")
+    
+            ctk.CTkLabel(units_frame, text="Display Units", font=FONT_HEADER, text_color=TEXT_COLOR).pack(pady=(10, 5))
+    
+            # Create a BooleanVar if it doesn't exist yet
+            if not hasattr(self, 'use_imperial'):
+                self.use_imperial = BooleanVar(value=True)  # Default to imperial (already showing °F)
+    
+            imperial_switch = ctk.CTkSwitch(
+                units_frame, 
+                text="Use Imperial Units (°F, lbs, psi)", 
+                variable=self.use_imperial,
+                command=self.toggle_units,
+                font=FONT_SMALL,
+                text_color=TEXT_COLOR,
+                switch_width=60,
+                button_color="#48aeff",
+                button_hover_color="#2a80ff",
+                fg_color="#d0d0d0"
+    )
+            imperial_switch.pack(pady=10, padx=20, anchor="w")
+    
+            # Section 2: Averaging Settings
+            avg_frame = ctk.CTkFrame(settings_tab, fg_color=WIDGET_BG_COLOR, corner_radius=10)
+            avg_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+    
+            ctk.CTkLabel(avg_frame, text="Averaging Settings", font=FONT_HEADER, text_color=TEXT_COLOR).pack(pady=(10, 5))
+    
+            avg_label = ctk.CTkLabel(avg_frame, text="Number of samples\nfor averaging:", font=FONT_SMALL, text_color=TEXT_COLOR)
+            avg_label.pack(anchor="w", padx=20, pady=(10, 5))
+    
+            # Create IntVar if it doesn't exist yet
+            if not hasattr(self, 'avg_samples'):
+                self.avg_samples = ctk.IntVar(value=100)  # Default to 100 samples
+    
+            avg_options = ["10", "20", "50", "100", "200", "500", "1000", "All"]
+            avg_dropdown = ctk.CTkComboBox(
+                avg_frame,
+                values=avg_options,
+                font=FONT_SMALL,
+                command=self.set_avg_samples,
+                width=100
+    )
+            avg_dropdown.set(str(self.avg_samples.get()))
+            avg_dropdown.pack(pady=(0, 10))
+    
+            # Section 3: Plot Settings
+            plot_frame = ctk.CTkFrame(settings_tab, fg_color=WIDGET_BG_COLOR, corner_radius=10)
+            plot_frame.grid(row=1, column=1, padx=10, pady=5, sticky="nsew")
+    
+            ctk.CTkLabel(plot_frame, text="Plot Settings", font=FONT_HEADER, text_color=TEXT_COLOR).pack(pady=(10, 5))
+    
+            # Refresh rate setting
+            refresh_label = ctk.CTkLabel(plot_frame, text="Plot refresh rate (ms):", font=FONT_SMALL, text_color=TEXT_COLOR)
+            refresh_label.pack(anchor="w", padx=20, pady=(10, 5))
+    
+            if not hasattr(self, 'plot_refresh_rate'):
+                self.plot_refresh_rate = ctk.IntVar(value=PLOT_UPDATE_INTERVAL)
+    
+            refresh_options = ["200", "500", "1000", "2000", "5000"]
+            refresh_dropdown = ctk.CTkComboBox(
+                plot_frame,
+                values=refresh_options,
+                font=FONT_SMALL,
+                command=self.set_refresh_rate,
+                width=100
+    )
+            refresh_dropdown.set(str(self.plot_refresh_rate.get()))
+            refresh_dropdown.pack(pady=(0, 10))
+    
+            # Max points setting
+            max_points_label = ctk.CTkLabel(plot_frame, text="Max data points shown:", font=FONT_SMALL, text_color=TEXT_COLOR)
+            max_points_label.pack(anchor="w", padx=20, pady=(10, 5))
+    
+            if not hasattr(self, 'max_plot_points'):
+                self.max_plot_points = ctk.IntVar(value=MAX_PLOT_POINTS)
+    
+            max_points_options = ["100", "500", "1000", "2000", "5000", "10000"]
+            max_points_dropdown = ctk.CTkComboBox(
+                plot_frame,
+                values=max_points_options,
+                font=FONT_SMALL,
+                command=self.set_max_points,
+                width=100
+    )
+            max_points_dropdown.set(str(self.max_plot_points.get()))
+            max_points_dropdown.pack(pady=(0, 10))
+    
+            # Apply button
+            apply_button = ctk.CTkButton(
+                settings_tab,
+                text="Apply Settings",
+                command=self.apply_settings,
+                font=FONT_BUTTON,
+                fg_color="#baffc9",
+                hover_color="#89e4a4",
+                text_color=TEXT_COLOR
+    )
+            apply_button.grid(row=2, column=0, columnspan=2, pady=20)
+    
+            # About Tab Content
+            about_frame = ctk.CTkFrame(about_tab, fg_color=WIDGET_BG_COLOR, corner_radius=10)
+            about_frame.pack(padx=10, pady=10, fill="both", expand=True)
+    
+            about_text = (
+                "Brake Dyno Data Acquisition\n\n"
+                "Version: 1.0.0\n\n"
+                "This program allows real-time acquisition and visualization of brake dynamometer data.\n\n"
+                "Features:\n"
+                "• Real-time data acquisition from sensors\n"
+                "• Multiple visualization options\n"
+                "• Data export to CSV\n"
+                "• Customizable display settings\n\n"
+                "© 2024 Your DynoCo"
+    )
+    
+            about_label = ctk.CTkLabel(
+                about_frame, 
+                text=about_text,
+                font=FONT_SMALL,
+                text_color=TEXT_COLOR,
+                justify="left",
+                wraplength=400
+    )
+            about_label.pack(padx=20, pady=20, fill="both", expand=True)
+
+    def toggle_units(self):
+            """Toggle between imperial and metric units for display"""
+            # Update the labels in the PlotHandler
+            is_imperial = self.use_imperial.get()
+    
+            # Update the IR temperature label
+            ir_ylabel = "Temp (°F)" if is_imperial else "Temp (°C)"
+            self.plot_handler.plots_info['ir_temp']['ylabel'] = ir_ylabel
+            self.plot_handler.ir_average_label.configure(
+            text=f"IR Temperatures ({ir_ylabel.split(' ')[1]})"
+    )
+    
+            # Force update of plots and averages
+            self.plot_handler.update_plot_layout()
+            self.plot_handler.update_plot(0)
+
+    def set_avg_samples(self, value):
+            """Set the number of samples to use for averaging"""
+            if value == "All":
+                self.avg_samples.set(-1)  # Use all available samples
+            else:
+                self.avg_samples.set(int(value))
+
+    def set_refresh_rate(self, value):
+            """Set the plot refresh rate"""
+            self.plot_refresh_rate.set(int(value))
+
+    def set_max_points(self, value):
+            """Set the maximum number of points to display"""
+            self.max_plot_points.set(int(value))
+
+    def apply_settings(self):
+            """Apply all settings changes"""
+            # Update the plot refresh interval
+            if self.plot_handler.animation:
+                self.plot_handler.animation.event_source.stop()
+                self.plot_handler.animation = animation.FuncAnimation(
+                    self.plot_handler.fig,
+                    self.plot_handler.update_plot,
+                    interval=self.plot_refresh_rate.get(),
+                    cache_frame_data=False
+        )
+    
+            # Update the MAX_PLOT_POINTS in PlotHandler
+            global MAX_PLOT_POINTS
+            MAX_PLOT_POINTS = self.max_plot_points.get()
+    
+            # Force redraw of the plots
+            self.plot_handler.update_plot_layout()
+            self.plot_handler.update_plot(0)
+
+        # Add "About Program" button at the bottom of the left (average) frame.
+            about_button = ctk.CTkButton(self.plot_handler.average_frame, text="About Program", font=FONT_BUTTON,
+                                     fg_color="#eeeeee", hover_color="#48aeff", text_color="#131313",
+                                     command=self.show_about_popup)
+            about_button.pack(side="bottom", fill="x", padx=10, pady=(10,15))
+
     def setup_average_frame(self):
         self.average_frame = ctk.CTkFrame(self.root, fg_color=WIDGET_BG_COLOR, corner_radius=15)
         self.average_frame.pack(side="left", fill="y", padx=(10, 0), pady=10)
         ir_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR)
         ir_frame.pack(pady=5, padx=10, fill="x")
-        self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures", font=FONT_HEADER, text_color=TEXT_COLOR)
+        # Optionally, update the label to indicate °F
+        self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures (°F)", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.ir_average_label.pack(pady=(15,5))
         self.ir_average_values = []
         for i in range(8):
@@ -180,6 +399,18 @@ class PlotHandler:
         self.rpm_average_label = ctk.CTkLabel(rpm_frame, text="RPM Average: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.rpm_average_label.pack(pady=1)
 
+    
+        self.about_button = ctk.CTkButton(
+        self.average_frame, 
+        text="About Program", 
+        font=FONT_BUTTON,
+        fg_color="#eeeeee", 
+        hover_color="#48aeff", 
+        text_color="#131313",
+        command=self.show_about_popup
+    )
+        self.about_button.pack(side="bottom", fill="x", padx=10, pady=(10,15))
+
     def setup_control_panel(self):
         control_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         control_frame.pack(pady=10, padx=10, fill="x")
@@ -191,7 +422,13 @@ class PlotHandler:
                 variable=info['visible'],
                 command=self.update_plot_layout,
                 font=FONT_CHECKBOX,
-                text_color=TEXT_COLOR
+                text_color=TEXT_COLOR,
+                fg_color="#ffffff",
+                checkmark_color="#48aeff",
+                hover_color="#eeeeee",
+                border_color="#48aeff",
+                border_width=2,
+                corner_radius=5
             ).pack(anchor='w', pady=10)
         self.refresh_button = ctk.CTkButton(
             control_frame,
@@ -230,14 +467,16 @@ class PlotHandler:
         for plot_name in self.visible_plots:
             ax = self.plots_info[plot_name]['axis']
             if plot_name == 'ir_temp':
-                latest_ir_temps = [self.serial_handler.data["ir_temp"][i][-1] for i in range(8)]
+                # Convert IR temperatures from °C to °F for display in the GUI.
+                latest_ir_temps_C = [self.serial_handler.data["ir_temp"][i][-1] for i in range(8)]
+                latest_ir_temps_F = [temp * 9/5 + 32 for temp in latest_ir_temps_C]
                 if "ir_temp" in self.plot_objects:
-                    for rect, h in zip(self.plot_objects["ir_temp"], latest_ir_temps):
+                    for rect, h in zip(self.plot_objects["ir_temp"], latest_ir_temps_F):
                         rect.set_height(h)
                 else:
-                    bars = ax.bar(self.ir_labels, latest_ir_temps, color="blue")
+                    bars = ax.bar(self.ir_labels, latest_ir_temps_F, color="blue")
                     self.plot_objects["ir_temp"] = bars
-                ax.set_ylim(min(latest_ir_temps) - 10, max(latest_ir_temps) + 10)
+                ax.set_ylim(min(latest_ir_temps_F) - 10, max(latest_ir_temps_F) + 10)
             elif plot_name == 'load':
                 y_data = self.serial_handler.data["load"][-MAX_PLOT_POINTS:]
                 if "load" in self.plot_objects:
@@ -282,14 +521,167 @@ class PlotHandler:
                 ax.relim()
                 ax.autoscale_view()
                 ax.legend(loc="upper left")
+            elif plot_name == 'brake_pressure':  # New branch for brake pressure plot
+                y_data = self.serial_handler.data["brake_pressure"][-MAX_PLOT_POINTS:]
+                if "brake_pressure" in self.plot_objects:
+                    line = self.plot_objects["brake_pressure"]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label="Brake Pressure (PSI)", color="brown")
+                    self.plot_objects["brake_pressure"] = line
+                ax.relim()
+                ax.autoscale_view()
+                ax.legend(loc="upper left")
+        self.update_averages()
+        self.canvas.draw()
+
+        if not self.serial_handler or not self.serial_handler.data["time"]:
+                return
+    
+            # Get settings from root if they exist
+        max_points = getattr(self.root, 'max_plot_points', None)
+        use_imperial = getattr(self.root, 'use_imperial', None)
+    
+            # Set defaults if the variables haven't been created yet
+        if max_points is None:
+            max_points = ctk.IntVar(value=MAX_PLOT_POINTS)
+            self.root.max_plot_points = max_points
+    
+        if use_imperial is None:
+            use_imperial = BooleanVar(value=True)  # Default to imperial (already showing °F)
+            self.root.use_imperial = use_imperial
+    
+        # Use the settings
+        max_plot_points = max_points.get()
+        imperial = use_imperial.get()
+    
+        times = self.serial_handler.data["time"]
+        start_time = times[0]
+        rel_times = [t - start_time for t in times]
+        plot_times = rel_times[-max_plot_points:]
+    
+        for plot_name in self.visible_plots:
+            ax = self.plots_info[plot_name]['axis']
+        
+        if plot_name == 'ir_temp':
+            # Get latest IR temperatures
+            latest_ir_temps_C = [self.serial_handler.data["ir_temp"][i][-1] for i in range(8)]
+            
+            # Convert if needed
+            if imperial:
+                latest_ir_temps = [temp * 9/5 + 32 for temp in latest_ir_temps_C]  # Convert to °F
+            else:
+                latest_ir_temps = latest_ir_temps_C  # Keep as °C
+            
+            if "ir_temp" in self.plot_objects:
+                for rect, h in zip(self.plot_objects["ir_temp"], latest_ir_temps):
+                    rect.set_height(h)
+            else:
+                bars = ax.bar(self.ir_labels, latest_ir_temps, color="blue")
+                self.plot_objects["ir_temp"] = bars
+            
+            ax.set_ylim(min(latest_ir_temps) - 10, max(latest_ir_temps) + 10)
+            
+        elif plot_name == 'load':
+            y_data = self.serial_handler.data["load"][-max_plot_points:]
+            if "load" in self.plot_objects:
+                line = self.plot_objects["load"]
+                line.set_data(plot_times, y_data)
+            else:
+                line, = ax.plot(plot_times, y_data, label="Load (lbs)", color="red")
+                self.plot_objects["load"] = line
+            ax.relim()
+            ax.autoscale_view()
+            ax.legend(loc="upper left")
+            
+        elif plot_name == 'rpm':
+            y_data = self.serial_handler.data["rotor_rpm"][-max_plot_points:]
+            if "rpm" in self.plot_objects:
+                line = self.plot_objects["rpm"]
+                line.set_data(plot_times, y_data)
+            else:
+                line, = ax.plot(plot_times, y_data, label="Rotor RPM", color="green")
+                self.plot_objects["rpm"] = line
+            ax.relim()
+            ax.autoscale_view()
+            ax.legend(loc="upper left")
+            
+        elif plot_name == 'tc1':
+            # Get thermocouple data
+            tc_data_C = self.serial_handler.data["tc_temp"][0][-max_plot_points:]
+            
+            # Convert if needed
+            if imperial:
+                y_data = [temp * 9/5 + 32 for temp in tc_data_C]  # Convert to °F
+                if "tc1" in self.plot_objects:
+                    line = self.plot_objects["tc1"]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label="Pad Temperature (°F)", color="purple")
+                    self.plot_objects["tc1"] = line
+            else:
+                y_data = tc_data_C  # Keep as °C
+                if "tc1" in self.plot_objects:
+                    line = self.plot_objects["tc1"]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label="Pad Temperature (°C)", color="purple")
+                    self.plot_objects["tc1"] = line
+            
+            ax.relim()
+            ax.autoscale_view()
+            ax.legend(loc="upper left")
+            
+        elif plot_name == 'tc2':
+            # Get thermocouple data
+            tc_data_C = self.serial_handler.data["tc_temp"][1][-max_plot_points:]
+            
+            # Convert if needed
+            if imperial:
+                y_data = [temp * 9/5 + 32 for temp in tc_data_C]  # Convert to °F
+                if "tc2" in self.plot_objects:
+                    line = self.plot_objects["tc2"]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label="Caliper Temperature (°F)", color="orange")
+                    self.plot_objects["tc2"] = line
+            else:
+                y_data = tc_data_C  # Keep as °C
+                if "tc2" in self.plot_objects:
+                    line = self.plot_objects["tc2"]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label="Caliper Temperature (°C)", color="orange")
+                    self.plot_objects["tc2"] = line
+            
+            ax.relim()
+            ax.autoscale_view()
+            ax.legend(loc="upper left")
+            
+        elif plot_name == 'brake_pressure':
+            y_data = self.serial_handler.data["brake_pressure"][-max_plot_points:]
+            if "brake_pressure" in self.plot_objects:
+                line = self.plot_objects["brake_pressure"]
+                line.set_data(plot_times, y_data)
+            else:
+                line, = ax.plot(plot_times, y_data, label="Brake Pressure (PSI)", color="brown")
+                self.plot_objects["brake_pressure"] = line
+            ax.relim()
+            ax.autoscale_view()
+            ax.legend(loc="upper left")
+    
         self.update_averages()
         self.canvas.draw()
 
     def update_averages(self):
         for i in range(8):
             data = self.serial_handler.data["ir_temp"][i]
-            avg = sum(data) / len(data) if data else 0
-            self.ir_average_values[i].configure(text=f"IR {i+1}: {avg:.2f}")
+            if data:
+                avg_C = sum(data) / len(data)
+                avg_F = avg_C * 9/5 + 32  # Convert to °F
+            else:
+                avg_F = 0
+            self.ir_average_values[i].configure(text=f"IR {i+1}: {avg_F:.2f}")
         for key, label in [("load", self.load_average_label),
                            ("rotor_rpm", self.rpm_average_label)]:
             data = self.serial_handler.data[key]
@@ -299,6 +691,98 @@ class PlotHandler:
             data = self.serial_handler.data["tc_temp"][idx]
             avg = sum(data) / len(data) if data else 0
             lbl.configure(text=f"{'Pad' if idx == 0 else 'Caliper'} Average: {avg:.2f}")
+
+            # Get the number of samples to use for averaging
+            avg_samples = getattr(self.root, 'avg_samples', None)
+            use_imperial = getattr(self.root, 'use_imperial', None)
+    
+            # Set defaults if the variables haven't been created yet
+            if avg_samples is None:
+                avg_samples = ctk.IntVar(value=100)
+                self.root.avg_samples = avg_samples
+    
+            if use_imperial is None:
+                use_imperial = BooleanVar(value=True)  # Default to imperial (already showing °F)
+                self.root.use_imperial = use_imperial
+    
+            sample_count = avg_samples.get()
+            imperial = use_imperial.get()
+    
+            for i in range(8):
+                data = self.serial_handler.data["ir_temp"][i]
+                if data:
+                    # Use all data or the specified number of samples
+                    if sample_count <= 0 or sample_count >= len(data):
+                        temp_data = data
+                    else:
+                        temp_data = data[-sample_count:]
+                
+                    avg_C = sum(temp_data) / len(temp_data)
+            
+                    # Display in the selected units
+                    if imperial:
+                        avg_temp = avg_C * 9/5 + 32  # Convert to °F
+                        unit = "°F"
+                    else:
+                        avg_temp = avg_C  # Keep as °C
+                        unit = "°C"
+                else:
+                    avg_temp = 0
+                    unit = "°F" if imperial else "°C"
+        
+                self.ir_average_values[i].configure(text=f"IR {i+1}: {avg_temp:.2f} {unit}")
+    
+            # Update load cell average
+            data = self.serial_handler.data["load"]
+            if data:
+                if sample_count <= 0 or sample_count >= len(data):
+                    load_data = data
+                else:
+                    load_data = data[-sample_count:]
+        
+                avg = sum(load_data) / len(load_data)
+            else:
+                avg = 0
+    
+            self.load_average_label.configure(text=f"Load Cell Average: {avg:.2f} lbs")
+    
+            # Update RPM average
+            data = self.serial_handler.data["rotor_rpm"]
+            if data:
+                if sample_count <= 0 or sample_count >= len(data):
+                    rpm_data = data
+                else:
+                    rpm_data = data[-sample_count:]
+        
+                avg = sum(rpm_data) / len(rpm_data)
+            else:
+                avg = 0
+    
+            self.rpm_average_label.configure(text=f"RPM Average: {avg:.2f}")
+    
+            # Update thermocouple averages
+            for idx, lbl in enumerate([self.pad_average_label, self.caliper_average_label]):
+                data = self.serial_handler.data["tc_temp"][idx]
+                if data:
+                    if sample_count <= 0 or sample_count >= len(data):
+                        tc_data = data
+                    else:
+                        tc_data = data[-sample_count:]
+            
+                avg_C = sum(tc_data) / len(tc_data)
+            
+                    # Display in the selected units
+                if imperial:
+                        avg_temp = avg_C * 9/5 + 32  # Convert to °F
+                        unit = "°F"
+                else:
+                        avg_temp = avg_C  # Keep as °C
+                        unit = "°C"
+            else:
+                    avg_temp = 0
+                    unit = "°F" if imperial else "°C"
+        
+                    lbl.configure(text=f"{'Pad' if idx == 0 else 'Caliper'} Average: {avg_temp:.2f} {unit}")        
 
     def start_plotting(self, serial_handler):
         self.serial_handler = serial_handler
@@ -376,21 +860,21 @@ class RootGUI:
         # Row 1: START, EXPORT
         self.start_button = ctk.CTkButton(grid_frame, text="START", font=FONT_BUTTON,
                                           command=self.start_reading, fg_color="#baffc9", 
-                                          hover_color="#89e4a4", text_color=TEXT_COLOR)
+                                          hover_color="#89e4a4", text_color=TEXT_COLOR, text_color_disabled="#555555")
         self.start_button.grid(row=1, column=0, padx=10, pady=5)
-        self.export_button = ctk.CTkButton(grid_frame, text="EXPORT", font=FONT_BUTTON,
+        self.export_button = ctk.CTkButton(grid_frame, text="START EXPORT", font=FONT_BUTTON,
                                            command=self.start_export, fg_color="#baffc9", 
-                                           hover_color="#89e4a4", text_color=TEXT_COLOR)
+                                           hover_color="#89e4a4", text_color=TEXT_COLOR, state="disabled", text_color_disabled="#555555")
         self.export_button.grid(row=1, column=1, padx=10, pady=5)
         
         # Row 2: STOP, STOP EXPORT
         self.stop_button = ctk.CTkButton(grid_frame, text="STOP", font=FONT_BUTTON,
                                          command=self.stop_reading, fg_color="#ffb3ba", 
-                                         hover_color="#ff8ca3", text_color=TEXT_COLOR)
+                                         hover_color="#ff8ca3", text_color=TEXT_COLOR, state="disabled", text_color_disabled="#555555")
         self.stop_button.grid(row=2, column=0, padx=10, pady=5)
         self.stop_export_button = ctk.CTkButton(grid_frame, text="STOP EXPORT", font=FONT_BUTTON,
                                                 command=self.stop_export, fg_color="#ffb3ba", 
-                                                hover_color="#ff8ca3", text_color=TEXT_COLOR)
+                                                hover_color="#ff8ca3", text_color=TEXT_COLOR, state="disabled", text_color_disabled="#555555")
         self.stop_export_button.grid(row=2, column=1, padx=10, pady=5)
         
         right_icon_label = ctk.CTkLabel(icon_frame, image=self.right_icon_ctk, text="", text_color=TEXT_COLOR)
@@ -402,21 +886,19 @@ class RootGUI:
         self.plot_handler.canvas.get_tk_widget().pack(fill="both", expand=True, padx=20, pady=10)
         self.plot_handler.update_plot(0)
         
-        # Add "About Program" button at the bottom of the left (average) frame.
-        about_button = ctk.CTkButton(self.plot_handler.average_frame, text="About Program", font=FONT_BUTTON,
-                                     fg_color="#eeeeee", hover_color="#48aeff", text_color="#131313",
-                                     command=self.show_about_popup)
-        about_button.pack(side="bottom", fill="x", padx=10, pady=(10,15))
 
     def select_export_folder(self):
         folder = filedialog.askdirectory(title="Select Export Folder")
         if folder:
             self.export_folder = folder
             self.export_folder_button.configure(text=f"Export Folder: {os.path.basename(folder)}")
+            # Enable the start export button once a folder is selected
+            self.export_button.configure(state="normal")
             print(f"Export folder set to: {folder}")
         else:
             self.export_folder = None
             self.export_folder_button.configure(text="Select Export Folder")
+            self.export_button.configure(state="disabled")
             print("No folder selected.")
 
     def start_reading(self):
@@ -427,21 +909,38 @@ class RootGUI:
             self.serial_handler.start_serial()
             self.plot_handler.start_plotting(self.serial_handler)
             self.root.after(100, self.plot_handler.update_plot, 0)
+            # Toggle button states: disable start and enable stop for reading
+            self.start_button.configure(state="disabled")
+            self.stop_button.configure(state="normal")
+            # Optionally disable the COM port dropdown while running
+            self.com_port_dropdown.configure(state="disabled")
         else:
             print("Please select a COM port.")
+
+    def stop_reading(self):
+        self.serial_handler.stop_serial()
+        self.plot_handler.stop_plotting()
+        # Toggle button states: enable start and disable stop for reading
+        self.start_button.configure(state="normal")
+        self.stop_button.configure(state="disabled")
+        # Re-enable the COM port dropdown after stopping
+        self.com_port_dropdown.configure(state="normal")
 
     def start_export(self):
         if not self.export_folder:
             print("Please select a valid export folder first.")
             return
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        csv_filename = os.path.join(self.export_folder, f"data_{timestamp}.csv")
+        timestamp = datetime.now().strftime("%Y-%m-%d--%H-%M-%S")
+        csv_filename = os.path.join(self.export_folder, f"data--{timestamp}.csv")
         try:
             f = open(csv_filename, "w")
             header = "Time,IR1,IR2,IR3,IR4,IR5,IR6,IR7,IR8,PAD,Caliper,Load,Brake_Pressure,Rotor_RPM,Laptop_Time\n"
             f.write(header)
             self.serial_handler.export_file = f
             print(f"Export file created: {csv_filename}")
+            # Toggle export button states: disable export button and enable stop export button
+            self.export_button.configure(state="disabled")
+            self.stop_export_button.configure(state="normal")
         except Exception as e:
             print(f"Error creating export file: {e}")
 
@@ -450,21 +949,13 @@ class RootGUI:
             self.serial_handler.export_file.close()
             self.serial_handler.export_file = None
             print("Export stopped.")
+            # Toggle export button states: enable export button and disable stop export button
+            self.export_button.configure(state="normal")
+            self.stop_export_button.configure(state="disabled")
         else:
             print("No export active.")
 
-    def stop_reading(self):
-        self.serial_handler.stop_serial()
-        self.plot_handler.stop_plotting()
-
-    def show_about_popup(self):
-        popup = ctk.CTkToplevel(self.root)
-        popup.title("About Program")
-        popup.geometry("400x200")
-        about_label = ctk.CTkLabel(popup, text="This is placeholder text for the About Program information.", font=FONT_HEADER, text_color=TEXT_COLOR)
-        about_label.pack(padx=20, pady=20)
-        close_button = ctk.CTkButton(popup, text="Close", font=FONT_BUTTON, fg_color="#baffc9", hover_color="#89e4a4", text_color=TEXT_COLOR, command=popup.destroy)
-        close_button.pack(pady=(0,20))
+    
 
     def on_closing(self):
         self.stop_export()

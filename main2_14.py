@@ -549,6 +549,12 @@ class PlotHandler:
         self.rpm_average_label = ctk.CTkLabel(rpm_frame, text="RPM Average: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.rpm_average_label.pack(pady=1)
 
+        brake_pressure_frame = ctk.CTkFrame(self.scrollable_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+        brake_pressure_frame.pack(pady=10, padx=10, fill="x")
+
+        self.brake_pressure_average_label = ctk.CTkLabel(brake_pressure_frame, text="Brake Pressure Avg: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
+        self.brake_pressure_average_label.pack(pady=1)
+
         self.about_button = ctk.CTkButton(
             self.average_frame, 
             text="About Program", 
@@ -863,7 +869,8 @@ class PlotHandler:
                 avg_F = 0
             self.ir_average_values[i].configure(text=f"IR {i+1}: {avg_F:.2f}")
         for key, label in [("load", self.load_average_label),
-                           ("rotor_rpm", self.rpm_average_label)]:
+                           ("rotor_rpm", self.rpm_average_label),
+                           ("brake_pressure", self.brake_pressure_average_label)]:
             data = self.serial_handler.data[key]
             avg = sum(data) / len(data) if data else 0
             label.configure(text=f"{key.replace('_', ' ').title()} Average: {avg:.2f}")
@@ -939,9 +946,23 @@ class PlotHandler:
                 avg = 0
     
             self.rpm_average_label.configure(text=f"RPM Average: {avg:.2f}")
-    
+
+            # Update brake pressure average
+        data = self.serial_handler.data["brake_pressure"]
+        if data:
+            if sample_count <= 0 or sample_count >= len(data):
+                pressure_data = data
+            else:
+                pressure_data = data[-sample_count:]
+            
+            avg = sum(pressure_data) / len(pressure_data)
+        else:
+            avg = 0
+
+        self.brake_pressure_average_label.configure(text=f"Brake Pressure Avg: {avg:.2f} PSI")
+
             # Update thermocouple averages
-            for idx, lbl in enumerate([self.pad_average_label, self.caliper_average_label]):
+        for idx, lbl in enumerate([self.pad_average_label, self.caliper_average_label]):
                 data = self.serial_handler.data["tc_temp"][idx]
                 if data:
                     if sample_count <= 0 or sample_count >= len(data):
@@ -958,7 +979,7 @@ class PlotHandler:
                 else:
                         avg_temp = avg_C  # Keep as °C
                         unit = "°C"
-            else:
+        else:
                     avg_temp = 0
                     unit = "°F" if imperial else "°C"
         

@@ -114,6 +114,7 @@ class PlotHandler:
         self.animation = None
         self.serial_handler = None
         self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2", "brake_pressure"]  # Added brake pressure to visible_plots list
+        self.visible_ir_sensors = []
         self.plot_objects = {}
         self.fig = plt.figure(figsize=(10, 20))
         self.plots_info = {
@@ -122,6 +123,54 @@ class PlotHandler:
                 'title': "IR Temperature Readings",
                 'ylabel': "Temp (°F)",  # Changed label to °F
                 'xlabel': "Sensors"
+            },
+            'ir_sensor_1': {
+            'visible': BooleanVar(value=False),
+            'title': "IR Sensor 1 Temperature vs Time",
+            'ylabel': "Temp (°F)",
+            'xlabel': "Time (s)"
+            },
+            'ir_sensor_2': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 2 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
+            },
+            'ir_sensor_3': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 3 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
+            },
+            'ir_sensor_4': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 4 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
+            },
+            'ir_sensor_5': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 5 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
+            },
+            'ir_sensor_6': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 6 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
+            },
+            'ir_sensor_7': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 7 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
+            },
+            'ir_sensor_8': {
+                'visible': BooleanVar(value=False),
+                'title': "IR Sensor 8 Temperature vs Time",
+                'ylabel': "Temp (°F)",
+                'xlabel': "Time (s)"
             },
             'load': {
                 'visible': BooleanVar(value=True),
@@ -158,6 +207,14 @@ class PlotHandler:
         self.setup_average_frame()
         self.setup_control_panel()
 
+    
+
+    def toggle_ir_sensor(self, sensor_num):
+        """Toggle visibility of a specific IR sensor's time plot"""
+        plot_name = f'ir_sensor_{sensor_num}'
+        current_state = self.plots_info[plot_name]['visible'].get()
+        self.plots_info[plot_name]['visible'].set(not current_state)
+        self.update_plot_layout()
     def show_about_popup(self):
             # Create settings popup window
             popup = ctk.CTkToplevel(self.root)
@@ -178,6 +235,7 @@ class PlotHandler:
     
             # Create tabs
             settings_tab = tabview.add("Settings")
+            manual_tab = tabview.add("Manual")
             about_tab = tabview.add("About")
     
             # Settings Tab
@@ -286,10 +344,41 @@ class PlotHandler:
     )
             apply_button.grid(row=2, column=0, columnspan=2, pady=20)
     
-            # About Tab Content
+        # Manual Tab - Simple layout with just the button
+            manual_frame = ctk.CTkFrame(manual_tab, fg_color=WIDGET_BG_COLOR, corner_radius=10)
+            manual_frame.pack(padx=10, pady=10, fill="both", expand=True)
+            
+            manual_label = ctk.CTkLabel(
+                manual_frame,
+                text="Click the button below to open the\nBrake Dyno Instruction Manual",
+                font=FONT_HEADER,
+                text_color=TEXT_COLOR,
+                justify="center"
+            )
+            manual_label.pack(pady=(50, 30))
+            
+            manual_button = ctk.CTkButton(
+                manual_frame,
+                text="Open Instruction Manual",
+                command=self.open_manual,
+                font=FONT_BUTTON,
+                fg_color="#d0d0ff",
+                hover_color="#b0b0ff",
+                text_color=TEXT_COLOR,
+                width=300,
+                height=50
+            )
+            manual_button.pack(pady=20)
+
+
+                        # About Tab Content
             about_frame = ctk.CTkFrame(about_tab, fg_color=WIDGET_BG_COLOR, corner_radius=10)
             about_frame.pack(padx=10, pady=10, fill="both", expand=True)
-    
+
+            # Create a frame for the text to control its size
+            text_frame = ctk.CTkFrame(about_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+            text_frame.pack(padx=20, pady=(0, 0), fill="both", expand=True)
+
             about_text = (
                 "Brake Dyno Data Acquisition\n\n"
                 "Version: 1.0.0\n\n"
@@ -299,19 +388,65 @@ class PlotHandler:
                 "• Multiple visualization options\n"
                 "• Data export to CSV\n"
                 "• Customizable display settings\n\n"
-                "© 2024 Your DynoCo"
-    )
-    
+                "© 2024 DynoCO"
+            )
+
             about_label = ctk.CTkLabel(
-                about_frame, 
+                text_frame, 
                 text=about_text,
                 font=FONT_SMALL,
                 text_color=TEXT_COLOR,
                 justify="left",
                 wraplength=400
-    )
-            about_label.pack(padx=20, pady=20, fill="both", expand=True)
+            )
+            about_label.pack(fill="both", expand=True)
 
+
+    def open_manual(self):
+        """Open the instruction manual PDF"""
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            manual_path = os.path.join(script_dir, "Brake_Dyno_GUI_Instruction_Manual_2_27_25.pdf")
+            
+            # Check if file exists
+            if os.path.exists(manual_path):
+                # Use appropriate OS-specific command to open the PDF
+                if sys.platform.startswith('darwin'):  # macOS
+                    import subprocess
+                    subprocess.call(('open', manual_path))
+                elif sys.platform.startswith('win'):   # Windows
+                    os.startfile(manual_path)
+                else:  # Linux and other Unix-like systems
+                    import subprocess
+                    subprocess.call(('xdg-open', manual_path))
+            else:
+                # Show an error message if the manual file is not found
+                error_popup = ctk.CTkToplevel(self.root)
+                error_popup.title("Manual Not Found")
+                error_popup.geometry("400x150")
+                error_popup.transient(self.root)
+                error_popup.grab_set()
+                
+                ctk.CTkLabel(
+                    error_popup,
+                    text=f"The instruction manual file was not found at:\n{manual_path}",
+                    font=FONT_SMALL,
+                    text_color=TEXT_COLOR,
+                    wraplength=350
+                ).pack(padx=20, pady=20)
+                
+                ctk.CTkButton(
+                    error_popup,
+                    text="OK",
+                    command=error_popup.destroy,
+                    font=FONT_BUTTON,
+                    fg_color="#ffb3ba",
+                    hover_color="#ff8ca3",
+                    text_color=TEXT_COLOR
+                ).pack(pady=(0, 20))
+        except Exception as e:
+            print(f"Error opening manual: {e}")
+          
     def toggle_units(self):
             """Toggle between imperial and metric units for display"""
             # Update the labels in the PlotHandler
@@ -372,74 +507,88 @@ class PlotHandler:
     def setup_average_frame(self):
         self.average_frame = ctk.CTkFrame(self.root, fg_color=WIDGET_BG_COLOR, corner_radius=15)
         self.average_frame.pack(side="left", fill="y", padx=(10, 0), pady=10)
-        ir_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR)
+        
+        # Add a scrollable frame container inside average_frame
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+        self.scrollable_frame.pack(side="top", fill="both", expand=True, padx=5, pady=5)
+        
+        ir_frame = ctk.CTkFrame(self.scrollable_frame, fg_color=WIDGET_BG_COLOR)
         ir_frame.pack(pady=5, padx=10, fill="x")
+        
         # Optionally, update the label to indicate °F
         self.ir_average_label = ctk.CTkLabel(ir_frame, text="IR Temperatures (°F)", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.ir_average_label.pack(pady=(15,5))
+        
         self.ir_average_values = []
         for i in range(8):
             label = ctk.CTkLabel(ir_frame, text=f"IR {i+1}: 0.00", font=FONT_SMALL, text_color=TEXT_COLOR)
             label.pack(pady=1)
             self.ir_average_values.append(label)
-        tc_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+        
+        tc_frame = ctk.CTkFrame(self.scrollable_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         tc_frame.pack(pady=10, padx=10, fill="x")
+        
         self.tc_average_label = ctk.CTkLabel(tc_frame, text="Thermocouple Temperatures", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.tc_average_label.pack(pady=5)
+        
         self.pad_average_label = ctk.CTkLabel(tc_frame, text="Pad Average: 0.00", font=FONT_SMALL, text_color=TEXT_COLOR)
         self.pad_average_label.pack(pady=2)
+        
         self.caliper_average_label = ctk.CTkLabel(tc_frame, text="Caliper Average: 0.00", font=FONT_SMALL, text_color=TEXT_COLOR)
         self.caliper_average_label.pack(pady=1)
-        load_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+        
+        load_frame = ctk.CTkFrame(self.scrollable_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         load_frame.pack(pady=10, padx=10, fill="x")
+        
         self.load_average_label = ctk.CTkLabel(load_frame, text="Load Cell Average: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.load_average_label.pack(pady=1)
-        rpm_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+        
+        rpm_frame = ctk.CTkFrame(self.scrollable_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
         rpm_frame.pack(pady=10, padx=10, fill="x")
+        
         self.rpm_average_label = ctk.CTkLabel(rpm_frame, text="RPM Average: 0.00", font=FONT_HEADER, text_color=TEXT_COLOR)
         self.rpm_average_label.pack(pady=1)
 
-    
         self.about_button = ctk.CTkButton(
-        self.average_frame, 
-        text="About Program", 
-        font=FONT_BUTTON,
-        fg_color="#eeeeee", 
-        hover_color="#48aeff", 
-        text_color="#131313",
-        command=self.show_about_popup
-    )
+            self.average_frame, 
+            text="About Program", 
+            font=FONT_BUTTON,
+            fg_color="#eeeeee", 
+            hover_color="#48aeff", 
+            text_color="#131313",
+            command=self.show_about_popup
+        )
         self.about_button.pack(side="bottom", fill="x", padx=10, pady=(10,15))
 
     def setup_control_panel(self):
-        control_frame = ctk.CTkFrame(self.average_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
-        control_frame.pack(pady=10, padx=10, fill="x")
-        ctk.CTkLabel(control_frame, text="Display Graphs", font=FONT_TITLE, text_color=TEXT_COLOR).pack(pady=5)
-        for plot_name, info in self.plots_info.items():
-            ctk.CTkCheckBox(
+            control_frame = ctk.CTkFrame(self.scrollable_frame, fg_color=WIDGET_BG_COLOR, corner_radius=0)
+            control_frame.pack(pady=10, padx=10, fill="x")
+            ctk.CTkLabel(control_frame, text="Display Graphs", font=FONT_TITLE, text_color=TEXT_COLOR).pack(pady=5)
+            for plot_name, info in self.plots_info.items():
+                ctk.CTkCheckBox(
+                    control_frame,
+                    text=info['title'],
+                    variable=info['visible'],
+                    command=self.update_plot_layout,
+                    font=FONT_CHECKBOX,
+                    text_color=TEXT_COLOR,
+                    fg_color="#ffffff",
+                    checkmark_color="#48aeff",
+                    hover_color="#eeeeee",
+                    border_color="#48aeff",
+                    border_width=2,
+                    corner_radius=5
+                ).pack(anchor='w', pady=10)
+            self.refresh_button = ctk.CTkButton(
                 control_frame,
-                text=info['title'],
-                variable=info['visible'],
+                text="Refresh Plots",
                 command=self.update_plot_layout,
-                font=FONT_CHECKBOX,
-                text_color=TEXT_COLOR,
-                fg_color="#ffffff",
-                checkmark_color="#48aeff",
-                hover_color="#eeeeee",
-                border_color="#48aeff",
-                border_width=2,
-                corner_radius=5
-            ).pack(anchor='w', pady=10)
-        self.refresh_button = ctk.CTkButton(
-            control_frame,
-            text="Refresh Plots",
-            command=self.update_plot_layout,
-            font=FONT_BUTTON,
-            fg_color="#eeeeee",
-            text_color="#131313",
-            hover_color="#48aeff",
-        )
-        self.refresh_button.pack(pady=10)
+                font=FONT_BUTTON,
+                fg_color="#eeeeee",
+                text_color="#131313",
+                hover_color="#48aeff",
+            )
+            self.refresh_button.pack(pady=10)
 
     def update_plot_layout(self):
         self.visible_plots = [name for name, info in self.plots_info.items() if info['visible'].get()]
@@ -464,8 +613,10 @@ class PlotHandler:
         start_time = times[0]
         rel_times = [t - start_time for t in times]
         plot_times = rel_times[-MAX_PLOT_POINTS:]
+    
         for plot_name in self.visible_plots:
             ax = self.plots_info[plot_name]['axis']
+        
             if plot_name == 'ir_temp':
                 # Convert IR temperatures from °C to °F for display in the GUI.
                 latest_ir_temps_C = [self.serial_handler.data["ir_temp"][i][-1] for i in range(8)]
@@ -477,6 +628,35 @@ class PlotHandler:
                     bars = ax.bar(self.ir_labels, latest_ir_temps_F, color="blue")
                     self.plot_objects["ir_temp"] = bars
                 ax.set_ylim(min(latest_ir_temps_F) - 10, max(latest_ir_temps_F) + 10)
+            
+            elif plot_name.startswith('ir_sensor_'):
+                # Handle individual IR sensor plots
+                sensor_idx = int(plot_name.split('_')[-1]) - 1  # Get 0-based index from plot name
+            
+                # Get temperature data for this sensor
+                temp_data_C = self.serial_handler.data["ir_temp"][sensor_idx][-MAX_PLOT_POINTS:]
+            
+                # Convert to Fahrenheit if needed
+                imperial = getattr(self.root, 'use_imperial', BooleanVar(value=True)).get()
+                if imperial:
+                    y_data = [temp * 9/5 + 32 for temp in temp_data_C]  # Convert to °F
+                    unit = "°F"
+                else:
+                    y_data = temp_data_C  # Keep as °C
+                    unit = "°C"
+                
+                # Update or create the plot
+                if plot_name in self.plot_objects:
+                    line = self.plot_objects[plot_name]
+                    line.set_data(plot_times, y_data)
+                else:
+                    line, = ax.plot(plot_times, y_data, label=f"IR Sensor {sensor_idx+1} ({unit})", color=f"C{sensor_idx % 10}")
+                    self.plot_objects[plot_name] = line
+                
+                ax.relim()
+                ax.autoscale_view()
+                ax.legend(loc="upper left")
+
             elif plot_name == 'load':
                 y_data = self.serial_handler.data["load"][-MAX_PLOT_POINTS:]
                 if "load" in self.plot_objects:

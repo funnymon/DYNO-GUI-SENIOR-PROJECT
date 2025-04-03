@@ -46,10 +46,6 @@ MAX_PLOT_POINTS = 6000       # Maximum number of points to display on the plot
 def low_pass_filter(data, cutoff, fs, order=4):
     """
     Applies a 4th order Butterworth low pass filter with a given cutoff frequency.
-    - data: array of data values.
-    - cutoff: cutoff frequency in Hz.
-    - fs: sampling frequency in Hz.
-    - order: order of the filter.
     """
     nyquist = 0.5 * fs
     normal_cutoff = cutoff / nyquist
@@ -133,10 +129,8 @@ class PlotHandler:
         self.canvas = None
         self.animation = None
         self.serial_handler = None
-        # Added brake_pressure to visible_plots list plus individual IR sensor time plots
-        self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2", "brake_pressure",
-                              "ir_sensor_1", "ir_sensor_2", "ir_sensor_3", "ir_sensor_4",
-                              "ir_sensor_5", "ir_sensor_6", "ir_sensor_7", "ir_sensor_8"]
+        # For IR sensors, we now have a single combined time plot.
+        self.visible_plots = ["ir_temp", "load", "rpm", "tc1", "tc2", "brake_pressure", "ir_sensor_time"]
         self.plot_objects = {}
         self.fig = plt.figure(figsize=(10, 20))
         self.plots_info = {
@@ -146,51 +140,9 @@ class PlotHandler:
                 'ylabel': "Temp (°F)",
                 'xlabel': "Sensors"
             },
-            'ir_sensor_1': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 1 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_2': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 2 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_3': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 3 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_4': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 4 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_5': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 5 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_6': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 6 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_7': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 7 Temperature vs Time",
-                'ylabel': "Temp (°F)",
-                'xlabel': "Time (s)"
-            },
-            'ir_sensor_8': {
-                'visible': BooleanVar(value=False),
-                'title': "IR Sensor 8 Temperature vs Time",
+            'ir_sensor_time': {
+                'visible': BooleanVar(value=True),
+                'title': "IR Sensor Temperatures vs Time",
                 'ylabel': "Temp (°F)",
                 'xlabel': "Time (s)"
             },
@@ -225,15 +177,15 @@ class PlotHandler:
                 'xlabel': "Time (s)"
             }
         }
+        # For the combined IR sensor plot, create a BooleanVar for each channel.
+        self.ir_channel_vars = [BooleanVar(value=True) for _ in range(8)]
         self.ir_labels = [f"IR {i+1}" for i in range(8)]
         self.setup_average_frame()
         self.setup_control_panel()
 
     def toggle_ir_sensor(self, sensor_num):
-        """Toggle visibility of a specific IR sensor's time plot"""
-        plot_name = f'ir_sensor_{sensor_num}'
-        current_state = self.plots_info[plot_name]['visible'].get()
-        self.plots_info[plot_name]['visible'].set(not current_state)
+        """Toggle visibility of a specific IR sensor channel in the combined plot"""
+        self.ir_channel_vars[sensor_num-1].set(not self.ir_channel_vars[sensor_num-1].get())
         self.update_plot_layout()
 
     def show_about_popup(self):
@@ -323,7 +275,7 @@ class PlotHandler:
             self.average_frame, 
             text="About Program", 
             font=FONT_BUTTON,
-            fg_color="#eeeeee", 
+            fg_color="#eeeeee",
             hover_color="#48aeff", 
             text_color="#131313",
             command=self.show_about_popup
@@ -349,6 +301,23 @@ class PlotHandler:
                 border_width=2,
                 corner_radius=5
             ).pack(anchor='w', pady=10)
+        # Section for IR Sensor Channels for the combined plot:
+        ctk.CTkLabel(control_frame, text="IR Sensor Channels", font=FONT_TITLE, text_color=TEXT_COLOR).pack(pady=(20,5))
+        for i in range(8):
+            ctk.CTkCheckBox(
+                control_frame,
+                text=f"IR Sensor {i+1}",
+                variable=self.ir_channel_vars[i],
+                command=self.update_plot_layout,
+                font=FONT_CHECKBOX,
+                text_color=TEXT_COLOR,
+                fg_color="#ffffff",
+                checkmark_color="#48aeff",
+                hover_color="#eeeeee",
+                border_color="#48aeff",
+                border_width=2,
+                corner_radius=5
+            ).pack(anchor='w', pady=5)
         self.refresh_button = ctk.CTkButton(
             control_frame,
             text="Refresh Plots",
@@ -380,21 +349,16 @@ class PlotHandler:
         if not self.serial_handler or not self.serial_handler.data["time"]:
             return
 
-        # Compute relative times and sampling frequency from serial data
         times = np.array(self.serial_handler.data["time"])
         start_time = times[0]
         rel_times = times - start_time
         plot_times = rel_times[-MAX_PLOT_POINTS:]
-        if len(times) > 1:
-            dt = np.mean(np.diff(times))
-        else:
-            dt = 1.0
+        dt = np.mean(np.diff(times)) if len(times) > 1 else 1.0
         fs = 1.0 / dt
         use_imperial = getattr(self, 'use_imperial', BooleanVar(value=True)).get()
 
         for plot_name in self.visible_plots:
             ax = self.plots_info[plot_name]['axis']
-            # --- Combined instantaneous IR bar plot (raw only) ---
             if plot_name == 'ir_temp':
                 raw_values = []
                 for i in range(8):
@@ -411,194 +375,147 @@ class PlotHandler:
                     self.plot_objects["ir_temp"] = bars
                 ax.set_ylim(min(raw_values) - 10, max(raw_values) + 10)
 
-            # --- Load plot ---
             elif plot_name == 'load':
                 raw_data = np.array(self.serial_handler.data["load"])[-MAX_PLOT_POINTS:]
                 n = min(len(plot_times), len(raw_data))
                 pt_sync = plot_times[-n:]
                 raw_sync = raw_data[-n:]
-                if len(raw_sync) > 3:
-                    try:
-                        filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4)
-                    except Exception:
-                        filtered_data = raw_sync
-                else:
+                try:
+                    filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4) if len(raw_sync)>3 else raw_sync
+                except Exception:
                     filtered_data = raw_sync
-                raw_key = "load_raw"
-                if raw_key in self.plot_objects:
-                    self.plot_objects[raw_key].set_data(pt_sync, raw_sync)
+                if "load_raw" in self.plot_objects:
+                    self.plot_objects["load_raw"].set_data(pt_sync, raw_sync)
                 else:
-                    raw_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
-                    self.plot_objects[raw_key] = raw_line
-                filt_key = "load_filtered"
-                if filt_key in self.plot_objects:
-                    self.plot_objects[filt_key].set_data(pt_sync, filtered_data)
+                    r_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
+                    self.plot_objects["load_raw"] = r_line
+                if "load_filtered" in self.plot_objects:
+                    self.plot_objects["load_filtered"].set_data(pt_sync, filtered_data)
                 else:
-                    line, = ax.plot(pt_sync, filtered_data, label="Load (lbs)", color="red")
-                    self.plot_objects[filt_key] = line
-                ax.relim()
-                ax.autoscale_view()
-                ax.legend(loc="upper left")
+                    f_line, = ax.plot(pt_sync, filtered_data, label="Load (lbs)", color="red")
+                    self.plot_objects["load_filtered"] = f_line
+                ax.relim(); ax.autoscale_view(); ax.legend(loc="upper left")
 
-            # --- RPM plot ---
             elif plot_name == 'rpm':
                 raw_data = np.array(self.serial_handler.data["rotor_rpm"])[-MAX_PLOT_POINTS:]
                 n = min(len(plot_times), len(raw_data))
                 pt_sync = plot_times[-n:]
                 raw_sync = raw_data[-n:]
-                if len(raw_sync) > 3:
-                    try:
-                        filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4)
-                    except Exception:
-                        filtered_data = raw_sync
-                else:
+                try:
+                    filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4) if len(raw_sync)>3 else raw_sync
+                except Exception:
                     filtered_data = raw_sync
-                raw_key = "rpm_raw"
-                if raw_key in self.plot_objects:
-                    self.plot_objects[raw_key].set_data(pt_sync, raw_sync)
+                if "rpm_raw" in self.plot_objects:
+                    self.plot_objects["rpm_raw"].set_data(pt_sync, raw_sync)
                 else:
-                    raw_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
-                    self.plot_objects[raw_key] = raw_line
-                filt_key = "rpm_filtered"
-                if filt_key in self.plot_objects:
-                    self.plot_objects[filt_key].set_data(pt_sync, filtered_data)
+                    r_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
+                    self.plot_objects["rpm_raw"] = r_line
+                if "rpm_filtered" in self.plot_objects:
+                    self.plot_objects["rpm_filtered"].set_data(pt_sync, filtered_data)
                 else:
-                    line, = ax.plot(pt_sync, filtered_data, label="Rotor RPM", color="green")
-                    self.plot_objects[filt_key] = line
-                ax.relim()
-                ax.autoscale_view()
-                ax.legend(loc="upper left")
+                    f_line, = ax.plot(pt_sync, filtered_data, label="Rotor RPM", color="green")
+                    self.plot_objects["rpm_filtered"] = f_line
+                ax.relim(); ax.autoscale_view(); ax.legend(loc="upper left")
 
-            # --- Pad Temperature (tc1) plot ---
             elif plot_name == 'tc1':
                 raw_data = np.array(self.serial_handler.data["tc_temp"][0])[-MAX_PLOT_POINTS:]
                 n = min(len(plot_times), len(raw_data))
                 pt_sync = plot_times[-n:]
                 raw_sync = raw_data[-n:]
-                if len(raw_sync) > 3:
-                    try:
-                        filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4)
-                    except Exception:
-                        filtered_data = raw_sync
-                else:
+                try:
+                    filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4) if len(raw_sync)>3 else raw_sync
+                except Exception:
                     filtered_data = raw_sync
-                raw_key = "tc1_raw"
-                if raw_key in self.plot_objects:
-                    self.plot_objects[raw_key].set_data(pt_sync, raw_sync)
+                if "tc1_raw" in self.plot_objects:
+                    self.plot_objects["tc1_raw"].set_data(pt_sync, raw_sync)
                 else:
-                    raw_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
-                    self.plot_objects[raw_key] = raw_line
-                filt_key = "tc1_filtered"
-                if filt_key in self.plot_objects:
-                    self.plot_objects[filt_key].set_data(pt_sync, filtered_data)
+                    r_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
+                    self.plot_objects["tc1_raw"] = r_line
+                if "tc1_filtered" in self.plot_objects:
+                    self.plot_objects["tc1_filtered"].set_data(pt_sync, filtered_data)
                 else:
-                    line, = ax.plot(pt_sync, filtered_data, label="Pad Temperature", color="purple")
-                    self.plot_objects[filt_key] = line
-                ax.relim()
-                ax.autoscale_view()
-                ax.legend(loc="upper left")
+                    f_line, = ax.plot(pt_sync, filtered_data, label="Pad Temperature", color="purple")
+                    self.plot_objects["tc1_filtered"] = f_line
+                ax.relim(); ax.autoscale_view(); ax.legend(loc="upper left")
 
-            # --- Caliper Temperature (tc2) plot ---
             elif plot_name == 'tc2':
                 raw_data = np.array(self.serial_handler.data["tc_temp"][1])[-MAX_PLOT_POINTS:]
                 n = min(len(plot_times), len(raw_data))
                 pt_sync = plot_times[-n:]
                 raw_sync = raw_data[-n:]
-                if len(raw_sync) > 3:
-                    try:
-                        filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4)
-                    except Exception:
-                        filtered_data = raw_sync
-                else:
+                try:
+                    filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4) if len(raw_sync)>3 else raw_sync
+                except Exception:
                     filtered_data = raw_sync
-                raw_key = "tc2_raw"
-                if raw_key in self.plot_objects:
-                    self.plot_objects[raw_key].set_data(pt_sync, raw_sync)
+                if "tc2_raw" in self.plot_objects:
+                    self.plot_objects["tc2_raw"].set_data(pt_sync, raw_sync)
                 else:
-                    raw_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
-                    self.plot_objects[raw_key] = raw_line
-                filt_key = "tc2_filtered"
-                if filt_key in self.plot_objects:
-                    self.plot_objects[filt_key].set_data(pt_sync, filtered_data)
+                    r_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
+                    self.plot_objects["tc2_raw"] = r_line
+                if "tc2_filtered" in self.plot_objects:
+                    self.plot_objects["tc2_filtered"].set_data(pt_sync, filtered_data)
                 else:
-                    line, = ax.plot(pt_sync, filtered_data, label="Caliper Temperature", color="orange")
-                    self.plot_objects[filt_key] = line
-                ax.relim()
-                ax.autoscale_view()
-                ax.legend(loc="upper left")
+                    f_line, = ax.plot(pt_sync, filtered_data, label="Caliper Temperature", color="orange")
+                    self.plot_objects["tc2_filtered"] = f_line
+                ax.relim(); ax.autoscale_view(); ax.legend(loc="upper left")
 
-            # --- Brake Pressure plot ---
             elif plot_name == 'brake_pressure':
                 raw_data = np.array(self.serial_handler.data["brake_pressure"])[-MAX_PLOT_POINTS:]
                 n = min(len(plot_times), len(raw_data))
                 pt_sync = plot_times[-n:]
                 raw_sync = raw_data[-n:]
-                if len(raw_sync) > 3:
-                    try:
-                        filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4)
-                    except Exception:
-                        filtered_data = raw_sync
-                else:
+                try:
+                    filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4) if len(raw_sync)>3 else raw_sync
+                except Exception:
                     filtered_data = raw_sync
-                raw_key = "brake_pressure_raw"
-                if raw_key in self.plot_objects:
-                    self.plot_objects[raw_key].set_data(pt_sync, raw_sync)
+                if "brake_pressure_raw" in self.plot_objects:
+                    self.plot_objects["brake_pressure_raw"].set_data(pt_sync, raw_sync)
                 else:
-                    raw_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
-                    self.plot_objects[raw_key] = raw_line
-                filt_key = "brake_pressure_filtered"
-                if filt_key in self.plot_objects:
-                    self.plot_objects[filt_key].set_data(pt_sync, filtered_data)
+                    r_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
+                    self.plot_objects["brake_pressure_raw"] = r_line
+                if "brake_pressure_filtered" in self.plot_objects:
+                    self.plot_objects["brake_pressure_filtered"].set_data(pt_sync, filtered_data)
                 else:
-                    line, = ax.plot(pt_sync, filtered_data, label="Brake Pressure (Filtered)", color="brown")
-                    self.plot_objects[filt_key] = line
-                ax.relim()
-                ax.autoscale_view()
-                ax.legend(loc="upper left")
+                    f_line, = ax.plot(pt_sync, filtered_data, label="Brake Pressure (Filtered)", color="brown")
+                    self.plot_objects["brake_pressure_filtered"] = f_line
+                ax.relim(); ax.autoscale_view(); ax.legend(loc="upper left")
 
-            # --- Individual IR sensor vs Time plots ---
-            elif plot_name.startswith("ir_sensor_"):
-                sensor_idx = int(plot_name.split("_")[-1]) - 1
-                raw_data = np.array(self.serial_handler.data["ir_temp"][sensor_idx])
-                n = min(len(plot_times), len(raw_data))
-                pt_sync = plot_times[-n:]
-                raw_sync = raw_data[-n:]
-                if len(raw_sync) > 3:
-                    try:
-                        filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4)
-                    except Exception:
-                        filtered_data = raw_sync
-                else:
-                    filtered_data = raw_sync
-                if use_imperial:
-                    raw_sync = raw_sync * 9/5 + 32
-                    filtered_data = filtered_data * 9/5 + 32
-                raw_key = f"ir_sensor_{sensor_idx+1}_raw"
-                if raw_key in self.plot_objects:
-                    self.plot_objects[raw_key].set_data(pt_sync, raw_sync)
-                else:
-                    raw_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
-                    self.plot_objects[raw_key] = raw_line
-                filt_key = f"ir_sensor_{sensor_idx+1}_filtered"
-                if filt_key in self.plot_objects:
-                    self.plot_objects[filt_key].set_data(pt_sync, filtered_data)
-                else:
-                    line, = ax.plot(pt_sync, filtered_data, label=self.plots_info[plot_name]['title'], color="blue")
-                    self.plot_objects[filt_key] = line
-                ax.relim()
-                ax.autoscale_view()
-                ax.legend(loc="upper left")
+            elif plot_name == 'ir_sensor_time':
+                # For combined IR sensor channels, plot raw (gray, no legend) and filtered (blue with legend)
+                for i in range(8):
+                    if self.ir_channel_vars[i].get():
+                        raw_data = np.array(self.serial_handler.data["ir_temp"][i])
+                        n = min(len(plot_times), len(raw_data))
+                        pt_sync = plot_times[-n:]
+                        raw_sync = raw_data[-n:]
+                        try:
+                            filtered_data = low_pass_filter(raw_sync, FILTER_CUTOFF, fs, order=4) if len(raw_sync)>3 else raw_sync
+                        except Exception:
+                            filtered_data = raw_sync
+                        if use_imperial:
+                            raw_sync = raw_sync * 9/5 + 32
+                            filtered_data = filtered_data * 9/5 + 32
+                        key_raw = f"ir_sensor_time_raw_{i}"
+                        if key_raw in self.plot_objects:
+                            self.plot_objects[key_raw].set_data(pt_sync, raw_sync)
+                        else:
+                            r_line, = ax.plot(pt_sync, raw_sync, color="#DDDDDD", label="_nolegend_")
+                            self.plot_objects[key_raw] = r_line
+                        key_filt = f"ir_sensor_time_filtered_{i}"
+                        label_str = f"IR Sensor {i+1}"
+                        if key_filt in self.plot_objects:
+                            self.plot_objects[key_filt].set_data(pt_sync, filtered_data)
+                        else:
+                            f_line, = ax.plot(pt_sync, filtered_data, label=label_str, color="blue")
+                            self.plot_objects[key_filt] = f_line
+                ax.relim(); ax.autoscale_view(); ax.legend(loc="upper left")
         self.update_averages()
         self.canvas.draw()
 
     def update_averages(self):
         times = self.serial_handler.data["time"]
-        if len(times) > 1:
-            dt = np.mean(np.diff(times))
-        else:
-            dt = 1.0
+        dt = np.mean(np.diff(times)) if len(times) > 1 else 1.0
         fs = 1.0 / dt
-        # Update IR sensor averages (using filtered last value if possible)
         for i in range(8):
             data = np.array(self.serial_handler.data["ir_temp"][i])
             if len(data) > 3:
@@ -610,13 +527,11 @@ class PlotHandler:
             else:
                 avg = 0
             self.ir_average_values[i].configure(text=f"IR {i+1}: {avg:.2f}")
-        # Update load and RPM averages
         for key, label in [("load", self.load_average_label),
                            ("rotor_rpm", self.rpm_average_label)]:
             data = self.serial_handler.data[key]
-            avg = sum(data) / len(data) if data else 0
+            avg = sum(data)/len(data) if data else 0
             label.configure(text=f"{key.replace('_', ' ').title()} Average: {avg:.2f}")
-        # Update thermocouple averages
         if not hasattr(self, 'avg_samples'):
             self.avg_samples = ctk.IntVar(value=100)
         if not hasattr(self, 'use_imperial'):
@@ -626,21 +541,15 @@ class PlotHandler:
         for idx, lbl in enumerate([self.pad_average_label, self.caliper_average_label]):
             data = self.serial_handler.data["tc_temp"][idx]
             if data:
-                if sample_count <= 0 or sample_count >= len(data):
-                    tc_data = data
-                else:
-                    tc_data = data[-sample_count:]
-                avg_C = sum(tc_data) / len(tc_data)
+                tc_data = data if sample_count <= 0 or sample_count >= len(data) else data[-sample_count:]
+                avg_C = sum(tc_data)/len(tc_data)
                 if imperial:
-                    avg_temp = avg_C * 9/5 + 32  # Convert to °F
-                    unit = "°F"
+                    avg_temp = avg_C*9/5+32; unit="°F"
                 else:
-                    avg_temp = avg_C
-                    unit = "°C"
+                    avg_temp = avg_C; unit="°C"
             else:
-                avg_temp = 0
-                unit = "°F" if imperial else "°C"
-            lbl.configure(text=f"{'Pad' if idx == 0 else 'Caliper'} Average: {avg_temp:.2f} {unit}")
+                avg_temp = 0; unit="°F" if imperial else "°C"
+            lbl.configure(text=f"{'Pad' if idx==0 else 'Caliper'} Average: {avg_temp:.2f} {unit}")
 
     def start_plotting(self, serial_handler):
         self.serial_handler = serial_handler
@@ -663,9 +572,12 @@ class RootGUI:
         self.serial_handler = SerialHandler()
         self.plot_handler = PlotHandler(self.root)
         self.export_folder = None
+        self.export_status_box = None  # Will hold the export status widget
         self.load_icons()
         self.create_widgets()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Start periodic export status update loop
+        self.update_export_status_loop()
 
     def load_icons(self):
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -694,10 +606,14 @@ class RootGUI:
         left_icon_label.pack(side="left", padx=20)
         center_frame = ctk.CTkFrame(icon_frame, fg_color=WIDGET_BG_COLOR, corner_radius=15)
         center_frame.pack(side="left", expand=True, fill="x", padx=20)
+        # Create a grid frame with 3 columns: first 2 for controls, 3rd for export status box
         grid_frame = ctk.CTkFrame(center_frame, fg_color=WIDGET_BG_COLOR, corner_radius=15)
         grid_frame.pack(pady=5, anchor="center")
         grid_frame.grid_columnconfigure(0, weight=1)
         grid_frame.grid_columnconfigure(1, weight=1)
+        grid_frame.grid_columnconfigure(2, weight=1)  # New column for export status
+        grid_frame.grid_rowconfigure(0, weight=1)  # Allow row to expand vertically
+
         self.com_port_dropdown = ctk.CTkComboBox(grid_frame, values=self.get_available_ports(), font=FONT_HEADER,
                                                   width=100, command=self.update_port_selection)
         if self.get_available_ports():
@@ -708,6 +624,10 @@ class RootGUI:
                                                   command=self.select_export_folder, fg_color="#d0d0ff", 
                                                   hover_color="#b0b0ff", text_color=TEXT_COLOR)
         self.export_folder_button.grid(row=0, column=1, padx=10, pady=5)
+        # Create export status box in column 2; make it fill the entire height
+        self.export_status_box = ctk.CTkLabel(grid_frame, text="", font=FONT_BUTTON, width=150, fg_color="#EEEEEE", text_color="black", corner_radius=5)
+        self.export_status_box.grid(row=0, column=2, rowspan=3, padx=10, pady=5, sticky="nsew")  # Fill vertically and horizontally
+
         self.start_button = ctk.CTkButton(grid_frame, text="START", font=FONT_BUTTON,
                                           command=self.start_reading, fg_color="#baffc9", 
                                           hover_color="#89e4a4", text_color=TEXT_COLOR, text_color_disabled="#555555")
@@ -753,18 +673,22 @@ class RootGUI:
             self.serial_handler.start_serial()
             self.plot_handler.start_plotting(self.serial_handler)
             self.root.after(100, self.plot_handler.update_plot, 0)
-            self.start_button.configure(state="disabled")
-            self.stop_button.configure(state="normal")
+            self.start_button.configure(state="disabled", fg_color="#EEEEEE")
+            self.stop_button.configure(state="normal", fg_color="#ffb3ba")
             self.com_port_dropdown.configure(state="disabled")
+            # Show export status box
+            self.export_status_box.grid()
         else:
             print("Please select a COM port.")
 
     def stop_reading(self):
         self.serial_handler.stop_serial()
         self.plot_handler.stop_plotting()
-        self.start_button.configure(state="normal")
-        self.stop_button.configure(state="disabled")
+        self.start_button.configure(state="normal", fg_color="#baffc9")
+        self.stop_button.configure(state="disabled", fg_color="#EEEEEE")
         self.com_port_dropdown.configure(state="normal")
+        # Hide export status box when program stops
+        self.export_status_box.grid_remove()
 
     def start_export(self):
         if not self.export_folder:
@@ -778,8 +702,8 @@ class RootGUI:
             f.write(header)
             self.serial_handler.export_file = f
             print(f"Export file created: {csv_filename}")
-            self.export_button.configure(state="disabled")
-            self.stop_export_button.configure(state="normal")
+            self.export_button.configure(state="disabled", fg_color="#EEEEEE")
+            self.stop_export_button.configure(state="normal", fg_color="#ffb3ba")
         except Exception as e:
             print(f"Error creating export file: {e}")
 
@@ -788,10 +712,36 @@ class RootGUI:
             self.serial_handler.export_file.close()
             self.serial_handler.export_file = None
             print("Export stopped.")
-            self.export_button.configure(state="normal")
-            self.stop_export_button.configure(state="disabled")
+            self.export_button.configure(state="normal", fg_color="#baffc9")
+            self.stop_export_button.configure(state="disabled", fg_color="#EEEEEE")
         else:
             print("No export active.")
+
+    def update_export_status_box(self):
+        # Only update if the export status box is visible
+        if not self.export_status_box.winfo_ismapped():
+            return
+        # If not running, hide the box
+        if not self.serial_handler.running:
+            self.export_status_box.grid_remove()
+            return
+        # Compute average RPM
+        rpm_data = self.serial_handler.data["rotor_rpm"]
+        avg_rpm = sum(rpm_data)/len(rpm_data) if rpm_data else 0
+        export_active = (self.serial_handler.export_file is not None)
+        # Set status based on conditions:
+        if export_active:
+            self.export_status_box.configure(text="EXPORT ACTIVE", fg_color="green", text_color="white")
+        else: # Export is inactive
+            if avg_rpm < 1:
+                # RPM below 1: gray background
+                self.export_status_box.configure(text="EXPORT INACTIVE", fg_color="#EEEEEE", text_color="black")    
+            else:
+                self.export_status_box.configure(text="EXPORT INACTIVE", fg_color="red", text_color="black")
+
+    def update_export_status_loop(self):
+        self.update_export_status_box()
+        self.root.after(500, self.update_export_status_loop)
 
     def on_closing(self):
         self.stop_export()

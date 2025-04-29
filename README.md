@@ -29,11 +29,14 @@ This application requires the following Python libraries:
 - `matplotlib`
 - `pyserial`
 - `pillow` (PIL)
+- `numpy`
+- `pandas`
+- `scipy`
 
 Install these dependencies using pip:
 
 ```bash
-pip install tkinter matplotlib pyserial pillow
+pip install customtkinter tkinter matplotlib pyserial pillow numpy pandas scipy
 ```
 
 ### COM Port Setup

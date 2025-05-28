@@ -372,7 +372,7 @@ class PlotHandler:
         """
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
-            manual_path = os.path.join(script_dir, "Brake_Dyno_GUI_Instruction_Manual_2_27_25.pdf")
+            manual_path = os.path.join(script_dir, "Assets/Brake_Dyno_GUI_Instruction_Manual_2_27_25.pdf")
 
             if os.path.exists(manual_path):
                 if sys.platform.startswith('darwin'):  # macOS
@@ -963,12 +963,12 @@ class RootGUI:
 
     def load_icons(self):
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        left_icon_path = os.path.join(script_dir, "left_icon.png")
+        left_icon_path = os.path.join(script_dir, "Assets/left_icon.png")
         left_img = Image.open(left_icon_path)
         left_img_resized = resize_image_to_height(left_img, LEFT_ICON_HEIGHT)
         self.left_icon_ctk = ctk.CTkImage(light_image=left_img_resized, dark_image=left_img_resized, size=left_img_resized.size)
 
-        right_icon_path = os.path.join(script_dir, "right_icon.jpg")
+        right_icon_path = os.path.join(script_dir, "Assets/right_icon.jpg")
         right_img = Image.open(right_icon_path)
         right_img_resized = resize_image_to_height(right_img, RIGHT_ICON_HEIGHT)
         self.right_icon_ctk = ctk.CTkImage(light_image=right_img_resized, dark_image=right_img_resized, size=right_img_resized.size)
@@ -1080,7 +1080,7 @@ class RootGUI:
             self.export_folder = folder
             self.export_folder_button.configure(text=f"Export Folder: {os.path.basename(folder)}")
             self.export_button.configure(state="normal")
-            d(f"Export folder set to: {folder}")
+            print(f"Export folder set to: {folder}")
         else:
             self.export_folder = None
             self.export_folder_button.configure(text="Select Export Folder")

@@ -5,7 +5,7 @@ a = Analysis(
     ['main2_14.py'],
     pathex=[],
     binaries=[],
-    datas=[('right_icon.jpg', '.'), ('left_icon.png', '.')],
+    datas=[('Assets/right_icon.jpg', '.'), ('Assets/left_icon.png', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['d_icon.ico'],
+    icon=['Assets/d_icon.ico'],
 )

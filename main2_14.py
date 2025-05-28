@@ -563,7 +563,7 @@ class PlotHandler:
         for i in range(8):
             ctk.CTkCheckBox(
                 control_frame,
-                text=f"IR Sensor {i+1}",
+                text=f"IR Channel {i+1}",
                 variable=self.ir_channel_vars[i],
                 command=self.update_plot_layout,
                 font=FONT_CHECKBOX,
@@ -1080,7 +1080,7 @@ class RootGUI:
             self.export_folder = folder
             self.export_folder_button.configure(text=f"Export Folder: {os.path.basename(folder)}")
             self.export_button.configure(state="normal")
-            print(f"Export folder set to: {folder}")
+            d(f"Export folder set to: {folder}")
         else:
             self.export_folder = None
             self.export_folder_button.configure(text="Select Export Folder")

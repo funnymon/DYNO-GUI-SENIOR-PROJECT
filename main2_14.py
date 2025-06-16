@@ -32,7 +32,8 @@ LEFT_ICON_HEIGHT = 150
 RIGHT_ICON_HEIGHT = 120
 
 # Global filtering constants
-FILTER_CUTOFF = 1  # Cutoff frequency for low-pass filter
+FILTER_CUTOFF = 0.1  # Cutoff frequency for low-pass filter
+ENABLE_FILTERING = True  # Toggle for filtering
 
 def resize_image_to_height(image, height):
     original_width, original_height = image.size
@@ -61,8 +62,8 @@ class SerialHandler:
         self.running = False
         # All temperature data are stored in °F
         self.data = {
-            "time": [],
-            "laptop_time": [],
+            "time": [],           # in seconds
+            "laptop_time": [],    # human‐readable timestamps
             "ir_temp": [[] for _ in range(8)],
             "tc_temp": [[], []],
             "load": [],
@@ -70,6 +71,9 @@ class SerialHandler:
             "rotor_rpm": []
         }
         self.export_file = None
+
+        # Toggle filtering before saving to CSV
+        # self.filter_enabled = False
 
     def set_port(self, port):
         self.port = port
@@ -95,11 +99,13 @@ class SerialHandler:
 
                         # Convert from °C to °F immediately
                         ir_temps_F = [(float(values[i]) * 9/5 + 32) for i in range(1, 9)]
-                        tc_temps_F = [(float(values[9]) * 9/5 + 32), (float(values[10]) * 9/5 + 32)]
-                        load_cell = float(values[11])
+                        tc_temps_F = [(float(values[9]) * 9/5 + 32),
+                                      (float(values[10]) * 9/5 + 32)]
+                        load_cell      = float(values[11])
                         brake_pressure = float(values[12])
-                        rotor_rpm = float(values[13])
+                        rotor_rpm      = float(values[13])
 
+                        # store in memory
                         self.data["time"].append(time_measured)
                         self.data["laptop_time"].append(current_time)
                         for i in range(8):
@@ -110,16 +116,58 @@ class SerialHandler:
                         self.data["brake_pressure"].append(brake_pressure)
                         self.data["rotor_rpm"].append(rotor_rpm)
 
-                        # Write CSV line (temperatures in °F)
+                        # decide what to write: raw vs filtered
+                        if ENABLE_FILTERING and len(self.data["time"]) > 1:
+                            dt = np.mean(np.diff(self.data["time"]))
+                            fs = 1.0 / dt
+                            print(f"[DEBUG] Attempting filtfilt with fs={fs:.1f} Hz; samples so far = {{}}".format(len(self.data["load"])))
+                            try:
+                                # padlen for 4th-order is 12, so we need >= 13 samples
+                                ir_filtered   = [
+                                    low_pass_filter(np.array(self.data["ir_temp"][i]), FILTER_CUTOFF, fs)[-1]
+                                    for i in range(8)
+                                ]
+                                tc_filtered   = [
+                                    low_pass_filter(np.array(self.data["tc_temp"][i]), FILTER_CUTOFF, fs)[-1]
+                                    for i in range(2)
+                                ]
+                                load_filtered = low_pass_filter(np.array(self.data["load"]), FILTER_CUTOFF, fs)[-1]
+                                bp_filtered   = low_pass_filter(np.array(self.data["brake_pressure"]), FILTER_CUTOFF, fs)[-1]
+                                rpm_filtered  = low_pass_filter(np.array(self.data["rotor_rpm"]), FILTER_CUTOFF, fs)[-1]
+
+                            except ValueError as e:
+                                print(f"[DEBUG] filtfilt failed: {e!r}.  Falling back to raw.")
+                                ir_filtered   = ir_temps_F
+                                tc_filtered   = tc_temps_F
+                                load_filtered = load_cell
+                                bp_filtered   = brake_pressure
+                                rpm_filtered  = rotor_rpm
+
+                            csv_ir    = ir_filtered
+                            csv_tc    = tc_filtered
+                            csv_load  = load_filtered
+                            csv_brake = bp_filtered
+                            csv_rpm   = rpm_filtered
+                        else:
+                            csv_ir    = ir_temps_F
+                            csv_tc    = tc_temps_F
+                            csv_load  = load_cell
+                            csv_brake = brake_pressure
+                            csv_rpm   = rotor_rpm
+
+
+                        # write CSV
                         csv_line = (
                             f"{time_measured}," +
-                            ",".join([f"{v}" for v in ir_temps_F]) +
-                            f",{tc_temps_F[0]},{tc_temps_F[1]},{load_cell},{brake_pressure},{rotor_rpm},{current_time}\n"
+                            ",".join(f"{v}" for v in csv_ir) +
+                            f",{csv_tc[0]},{csv_tc[1]},{csv_load},{csv_brake},{csv_rpm},{current_time}\n"
                         )
                         if self.export_file is not None:
                             self.export_file.write(csv_line)
                             self.export_file.flush()
+
                     time.sleep(0.001)
+
                 except Exception as e:
                     print(f"Data read error: {e}")
 
@@ -1090,6 +1138,7 @@ class RootGUI:
     def start_reading(self):
         self.plot_handler.update_plot_layout()
         selected_port = self.com_port_dropdown.get()
+
         if selected_port:
             self.serial_handler.set_port(selected_port)
             self.serial_handler.start_serial()
